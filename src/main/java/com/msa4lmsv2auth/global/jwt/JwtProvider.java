@@ -15,6 +15,7 @@ import java.util.Date;
 public class JwtProvider {
     private final JwtConfig jwtConfig;
     private final SecretKey secretKey;
+    private static final long PASSWORD_CHANGE_TOKEN_EXPIRE_TIME = 10 * 60 * 1000L; // 10분
 
     public JwtProvider(JwtConfig jwtConfig, CookieManager cookieManager) {
         this.jwtConfig = jwtConfig;
@@ -36,6 +37,23 @@ public class JwtProvider {
                .signWith(secretKey)
                .compact();
    }
+
+   // 최초 로그인 임시 토큰 생성
+    public String generatePasswordChangeToken(Account account) {
+        Date now = new Date();
+
+        Date expiration = new Date(
+                now.getTime() + PASSWORD_CHANGE_TOKEN_EXPIRE_TIME
+        );
+        return Jwts.builder()
+                .subject(account.getLoginId())
+                .claim("role", account.getRole())
+                .claim("purpose", "PASSWORD_CHANGE")
+                .issuedAt(now)
+                .expiration(expiration)
+                .signWith(secretKey)
+                .compact();
+    }
 
    public String generateAccessToken(Account account) {
         return this.generateToken(account, jwtConfig.accessTokenExpiry());
@@ -63,4 +81,18 @@ public class JwtProvider {
             throw new InvalidTokenException("토큰 검증에 실패했습니다.");
         }
    }
+
+   // 비밀번호 변경 용 JWT 확인
+    public Claims parsePasswordChangeToken(String token) {
+        Claims claims = extractClaims(token);
+
+        String purpose = claims.get("purpose", String.class);
+
+        if(!"PASSWORD_CHANGE".equals(purpose)) {
+            throw new InvalidTokenException("비밀번호 변경용 토큰이 아닙니다.");
+        }
+        return claims;
+    }
+
+
 }

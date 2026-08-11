@@ -47,6 +47,11 @@ public class AuthService {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
+        // 최초 로그인 여부 확인
+        if(account.isRequiresPasswordChange()) {
+            return generatePasswordChangeAuthentication(account);
+        }
+
         return this.generateAuthentication(response, account);
     }
 
@@ -63,6 +68,13 @@ public class AuthService {
         cookieManager.setRefreshTokenToCookie(response, refreshToken);
 
         return AuthResponseDTO.from(account, accessToken);
+    }
+
+    // 최초 로그인 시 임시 토큰 발급
+    private AuthResponseDTO generatePasswordChangeAuthentication(Account account) {
+        String passwordChangeToken  = jwtProvider.generatePasswordChangeToken(account);
+
+        return AuthResponseDTO.forPasswordChange(account, passwordChangeToken);
     }
 
     // 토큰 재발급
