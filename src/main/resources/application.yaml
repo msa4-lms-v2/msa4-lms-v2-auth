@@ -60,8 +60,8 @@ logging:
     name: logs/error.log
   level:
     root: info
-    com.msameerkatgramv2auth.controllers: debug
-    com.msameerkatgramv2auth.global.errors: debug
+    com.msa4lmsv2auth.controllers: debug
+    com.msa4lmsv2auth.global.errors: debug
 
 # Security & JWT
 jwt:
