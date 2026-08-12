@@ -46,7 +46,7 @@ public class JwtProvider {
                 now.getTime() + PASSWORD_CHANGE_TOKEN_EXPIRE_TIME
         );
         return Jwts.builder()
-                .subject(account.getLoginId())
+                .subject(String.valueOf(account.getId()))
                 .claim("role", account.getRole())
                 .claim("purpose", "PASSWORD_CHANGE")
                 .issuedAt(now)
