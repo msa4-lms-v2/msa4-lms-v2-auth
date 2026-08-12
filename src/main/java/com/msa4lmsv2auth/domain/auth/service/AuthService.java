@@ -26,7 +26,10 @@ public class AuthService {
     private final CookieManager cookieManager;
 
     // 로그인
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(
+            rollbackFor = Exception.class,
+            noRollbackFor = NotRegisteredException.class
+    )
     public AuthResponseDTO login(
             HttpServletResponse response,
             LoginRequestDTO loginRequestDTO,
@@ -42,10 +45,22 @@ public class AuthService {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
+        // 잠긴 계정인지 확인
+        if(account.isLocked()) {
+            if(account.isLockExpired()) {
+                account.unlock();
+            } else {
+                throw new IllegalStateException("잠긴 계정입니다.");
+            }
+        }
+
+
         // 비밀번호 체크
         if(!passwordEncoder.matches(loginRequestDTO.password(), account.getPassword())) {
+            account.increaseFailedLoginAttempts();
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
+        account.resetFailedLoginAttempts();
 
         // 최초 로그인 여부 확인
         if(account.isRequiresPasswordChange()) {

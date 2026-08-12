@@ -2,15 +2,7 @@ package com.msa4lmsv2auth.domain.account.entity;
 
 import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.global.security.constant.Role;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -21,6 +13,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.sql.Types;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -75,4 +68,44 @@ public class Account {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+
+    // 실패 횟수 증가, 잠금 처리
+    public void increaseFailedLoginAttempts() {
+        this.failedLoginAttempts++;
+
+        if(this.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+            this.status = AccountStatus.LOCKED;
+            // 다음 날 00:00에 잠금 해제
+            this.lockedUntil = LocalDate.now()
+                    .plusDays(1)
+                    .atStartOfDay();
+        }
+    }
+
+    // 잠긴 계정인지 확인
+    public boolean isLocked() {
+        return this.status == AccountStatus.LOCKED;
+    }
+
+    // 잠긴 시간이 끝났는지 확인 / 현재시간 >= lockedUntil
+    public boolean isLockExpired() {
+        return this.isLocked()
+                && this.lockedUntil != null
+                && !LocalDateTime.now().isBefore(this.lockedUntil);
+    }
+
+    // 잠금 해제
+    public void unlock() {
+        this.status = AccountStatus.ACTIVE;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
+
+    // 로그인 성공 시 실패 횟수 초기화
+    public void resetFailedLoginAttempts() {
+        this.failedLoginAttempts = 0;
+    }
 }
