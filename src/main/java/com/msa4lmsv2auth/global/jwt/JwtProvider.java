@@ -4,56 +4,73 @@ import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.global.cookie.CookieManager;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
 import io.jsonwebtoken.*;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.SecretKey;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtProvider {
+
+    private static final String TOKEN_TYPE_ACCESS = "access";
+    private static final String TOKEN_TYPE_REFRESH = "refresh";
+
     private final JwtConfig jwtConfig;
-    private final SecretKey secretKey;
+    private final PrivateKey privateKey;
+    private final PublicKey publicKey;
 
     public JwtProvider(JwtConfig jwtConfig, CookieManager cookieManager) {
         this.jwtConfig = jwtConfig;
-        this.secretKey = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(jwtConfig.secret()));
+        this.privateKey = loadPrivateKey(jwtConfig.privateKeyB64());
+        this.publicKey = loadPublicKey(jwtConfig.publicKeyB64());
     }
 
-   public String generateToken(Account account, int ttl) {
-       Date now = new Date();
+    public String generateAccessToken(Account account) {
+        return generateToken(account, jwtConfig.accessTokenExpiry(), TOKEN_TYPE_ACCESS, jwtConfig.accessAudience(), null);
+    }
 
-       return Jwts.builder()
-               .header()
-               .type(jwtConfig.type())
-               .and()
-               .subject(String.valueOf(account.getId()))
-               .issuer((jwtConfig.issuer()))
-               .issuedAt(now)
-               .expiration(new Date(now.getTime()+ttl))
-               .claim("role",account.getRole())
-               .signWith(secretKey)
-               .compact();
-   }
+    public String generateRefreshToken(Account account) {
+        return generateToken(account, jwtConfig.refreshTokenExpiry(), TOKEN_TYPE_REFRESH, jwtConfig.refreshAudience(), UUID.randomUUID().toString());
+    }
 
-   public String generateAccessToken(Account account) {
-        return this.generateToken(account, jwtConfig.accessTokenExpiry());
-   }
+    private String generateToken(Account account, int ttl, String tokenType, String audience, String jti) {
+        Date now = new Date();
 
-   public String generateRefreshToken(Account account) {
-        return this.generateToken(account, jwtConfig.refreshTokenExpiry());
-   }
+        JwtBuilder builder = Jwts.builder()
+                .header()
+                .type(jwtConfig.type())
+                .keyId(jwtConfig.kid())
+                .and()
+                .subject(String.valueOf(account.getId()))
+                .issuer(jwtConfig.issuer())
+                .audience().add(audience)
+                .and()
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + ttl))
+                .claim("role", account.getRole())
+                .claim("token_type", tokenType);
 
-   public Claims extractClaims(String token) {
-        try{
+        if (jti != null) {
+            builder.id(jti);
+        }
+
+        return builder.signWith(privateKey).compact();
+    }
+
+    public Claims extractClaims(String token) {
+        try {
             return Jwts.parser()
-                    .verifyWith(this.secretKey)
+                    .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
-                    .getPayload()
-                    ;
-        } catch (ExpiredJwtException e){
+                    .getPayload();
+        } catch (ExpiredJwtException e) {
             throw new InvalidTokenException("토큰이 만료됐습니다.");
         } catch (UnsupportedJwtException e) {
             throw new InvalidTokenException("서명이 위조된 토큰입니다.");
@@ -62,5 +79,33 @@ public class JwtProvider {
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidTokenException("토큰 검증에 실패했습니다.");
         }
-   }
+    }
+
+    private PrivateKey loadPrivateKey(String base64Pem) {
+        try {
+            String pem = stripPem(base64Pem);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(pem)));
+        } catch (Exception e) {
+            throw new IllegalStateException("JWT 개인키를 불러올 수 없습니다.", e);
+        }
+    }
+
+    private PublicKey loadPublicKey(String base64Pem) {
+        try {
+            String pem = stripPem(base64Pem);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            return keyFactory.generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(pem)));
+        } catch (Exception e) {
+            throw new IllegalStateException("JWT 공개키를 불러올 수 없습니다.", e);
+        }
+    }
+
+    private String stripPem(String base64OfPem) {
+        String pem = new String(Base64.getDecoder().decode(base64OfPem));
+        return pem
+                .replaceAll("-----BEGIN (.*)-----", "")
+                .replaceAll("-----END (.*)-----", "")
+                .replaceAll("\\s", "");
+    }
 }
