@@ -12,7 +12,11 @@ public record JwtConfig(
         , int refreshTokenExpiry
         , String refreshTokenCookieName
         , int refreshTokenCookieExpiry
-        , String secret
+        , String kid
+        , String privateKeyB64
+        , String publicKeyB64
+        , String accessAudience
+        , String refreshAudience
         , String headerKey
         , String scheme
         , String reissueUri
