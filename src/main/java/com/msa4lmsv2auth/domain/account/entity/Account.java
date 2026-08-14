@@ -51,7 +51,7 @@ public class Account {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(Types.VARCHAR)
     @Column(name = "status", nullable = false, length = 20)
-    private AccountStatus status = AccountStatus.PENDING;
+    private AccountStatus status = AccountStatus.PENDING_PROVISIONING;
 
     @Column(name = "refresh_token", length = 512)
     private String refreshToken;
