@@ -5,18 +5,25 @@ import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.domain.auth.repository.AuthRepository;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
+import com.msa4lmsv2auth.domain.auth.session.RefreshSession;
+import com.msa4lmsv2auth.domain.auth.session.RefreshSessionService;
 import com.msa4lmsv2auth.global.cookie.CookieManager;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
 import com.msa4lmsv2auth.global.error.custom.business.NotRegisteredException;
+import com.msa4lmsv2auth.global.error.custom.business.RefreshSessionUnavailableException;
 import com.msa4lmsv2auth.global.jwt.JwtProvider;
 import com.msa4lmsv2auth.global.security.constant.Role;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Service
@@ -25,11 +32,13 @@ public class AuthService {
 
     private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
     private static final long LOCK_DURATION_MINUTES = 15;
+    private static final Duration DB_OUTAGE_REFRESH_GRACE_PERIOD = Duration.ofHours(3);
 
     private final AuthRepository authRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final CookieManager cookieManager;
+    private final RefreshSessionService refreshSessionService;
 
     // 로그인
     @Transactional(rollbackFor = Exception.class)
@@ -85,9 +94,13 @@ public class AuthService {
         String accessToken = jwtProvider.generateAccessToken(account);
         String refreshToken = jwtProvider.generateRefreshToken(account);
 
-        // refresh DB 저장
-        account.setRefreshToken(refreshToken);
-        authRepository.save(account);
+        Claims refreshClaims = jwtProvider.extractRefreshClaims(refreshToken);
+        refreshSessionService.create(
+                account,
+                refreshClaims.getId(),
+                refreshClaims.getExpiration().toInstant(),
+                Instant.now()
+        );
 
         // refresh cookie 저장
         cookieManager.setRefreshTokenToCookie(response, refreshToken);
@@ -96,41 +109,77 @@ public class AuthService {
     }
 
     // 토큰 재발급
-    @Transactional(rollbackFor = Exception.class)
     public AuthResponseDTO reissue(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = cookieManager.getRefreshTokenToCookie(request)
                 .orElseThrow(() -> new InvalidTokenException("리프래시 토큰 없음"));
 
-        long userId = Long.parseLong(jwtProvider.extractClaims(refreshToken).getSubject());
+        Claims refreshClaims = jwtProvider.extractRefreshClaims(refreshToken);
+        long userId = parseUserId(refreshClaims.getSubject());
+        RefreshSession currentSession = refreshSessionService.validate(userId, refreshClaims.getId());
 
-        Account account = authRepository.findById(userId)
-                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 회원의 토큰입니다."));
-
-        if(account.getRefreshToken() == null) {
-            throw new InvalidTokenException("비로그인 상태입니다.");
+        Account account = null;
+        boolean dbVerified = false;
+        try {
+            account = authRepository.findById(userId).orElse(null);
+            dbVerified = true;
+        } catch (DataAccessException ignored) {
+            if (Duration.between(currentSession.lastDbVerifiedAt(), Instant.now())
+                    .compareTo(DB_OUTAGE_REFRESH_GRACE_PERIOD) > 0) {
+                throw new RefreshSessionUnavailableException(
+                        "Auth DB 확인 유예 시간이 만료되어 토큰을 재발급할 수 없습니다."
+                );
+            }
         }
 
-        if(!account.getRefreshToken().equals(refreshToken)) {
-            throw new InvalidTokenException("토큰이 일치하지 않습니다.");
+        if (dbVerified && account == null) {
+            refreshSessionService.delete(userId);
+            throw new InvalidTokenException("유효하지 않은 회원의 토큰입니다.");
         }
 
-        if (account.getStatus() != AccountStatus.ACTIVE) {
+        if (account != null && account.getStatus() != AccountStatus.ACTIVE) {
+            refreshSessionService.delete(userId);
             throw new InvalidTokenException("계정 상태로 인해 재발급할 수 없습니다.");
         }
 
-        return this.generateAuthentication(response, account);
+        Role role = account != null ? account.getRole() : currentSession.role();
+        String accessToken = jwtProvider.generateAccessToken(userId, role);
+        String newRefreshToken = jwtProvider.generateRefreshToken(userId, role);
+        Claims newRefreshClaims = jwtProvider.extractRefreshClaims(newRefreshToken);
+
+        RefreshSession nextSession;
+        if (account != null) {
+            nextSession = refreshSessionService.rotate(
+                    currentSession,
+                    account,
+                    newRefreshClaims.getId(),
+                    newRefreshClaims.getExpiration().toInstant(),
+                    Instant.now()
+            );
+        } else {
+            nextSession = refreshSessionService.rotateWithoutDbVerification(
+                    currentSession,
+                    newRefreshClaims.getId(),
+                    newRefreshClaims.getExpiration().toInstant()
+            );
+        }
+
+        cookieManager.setRefreshTokenToCookie(response, newRefreshToken);
+        return account != null
+                ? AuthResponseDTO.from(account, accessToken)
+                : AuthResponseDTO.from(nextSession, accessToken);
     }
 
     // 로그아웃
-    @Transactional(rollbackFor = Exception.class)
     public void logout(HttpServletResponse response, long userId) {
-        Account account = authRepository.findById(userId)
-                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 회원입니다."));
-
-        account.setRefreshToken(null);
-        authRepository.save(account);
-
+        refreshSessionService.delete(userId);
         cookieManager.removeRefreshTokenToCookie(response);
+    }
 
+    private long parseUserId(String subject) {
+        try {
+            return Long.parseLong(subject);
+        } catch (NumberFormatException e) {
+            throw new InvalidTokenException("토큰의 사용자 식별자가 올바르지 않습니다.");
+        }
     }
 }

@@ -53,6 +53,9 @@ dependencies {
     // DB
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // Redis - Refresh Session 전용
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
     // junit
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
