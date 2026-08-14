@@ -22,6 +22,7 @@ dependencies {
     // Web
     implementation 'org.springframework.boot:spring-boot-starter-web'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 
     // Security
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -52,6 +53,10 @@ dependencies {
 
     // DB
     runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // Testcontainers
+    testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
+    testImplementation 'org.testcontainers:testcontainers-mysql'
 
     // junit
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
