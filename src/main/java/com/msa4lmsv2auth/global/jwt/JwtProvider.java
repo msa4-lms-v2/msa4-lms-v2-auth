@@ -3,6 +3,7 @@ package com.msa4lmsv2auth.global.jwt;
 import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.global.cookie.CookieManager;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
+import com.msa4lmsv2auth.global.security.constant.Role;
 import io.jsonwebtoken.*;
 import org.springframework.stereotype.Component;
 
@@ -32,14 +33,22 @@ public class JwtProvider {
     }
 
     public String generateAccessToken(Account account) {
-        return generateToken(account, jwtConfig.accessTokenExpiry(), TOKEN_TYPE_ACCESS, jwtConfig.accessAudience(), null);
+        return generateAccessToken(account.getId(), account.getRole());
     }
 
     public String generateRefreshToken(Account account) {
-        return generateToken(account, jwtConfig.refreshTokenExpiry(), TOKEN_TYPE_REFRESH, jwtConfig.refreshAudience(), UUID.randomUUID().toString());
+        return generateRefreshToken(account.getId(), account.getRole());
     }
 
-    private String generateToken(Account account, int ttl, String tokenType, String audience, String jti) {
+    public String generateAccessToken(long userId, Role role) {
+        return generateToken(userId, role, jwtConfig.accessTokenExpiry(), TOKEN_TYPE_ACCESS, jwtConfig.accessAudience(), null);
+    }
+
+    public String generateRefreshToken(long userId, Role role) {
+        return generateToken(userId, role, jwtConfig.refreshTokenExpiry(), TOKEN_TYPE_REFRESH, jwtConfig.refreshAudience(), UUID.randomUUID().toString());
+    }
+
+    private String generateToken(long userId, Role role, int ttl, String tokenType, String audience, String jti) {
         Date now = new Date();
 
         JwtBuilder builder = Jwts.builder()
@@ -47,13 +56,13 @@ public class JwtProvider {
                 .type(jwtConfig.type())
                 .keyId(jwtConfig.kid())
                 .and()
-                .subject(String.valueOf(account.getId()))
+                .subject(String.valueOf(userId))
                 .issuer(jwtConfig.issuer())
                 .audience().add(audience)
                 .and()
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + ttl))
-                .claim("role", account.getRole())
+                .claim("role", role)
                 .claim("token_type", tokenType);
 
         if (jti != null) {
@@ -79,6 +88,20 @@ public class JwtProvider {
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidTokenException("토큰 검증에 실패했습니다.");
         }
+    }
+
+    public Claims extractRefreshClaims(String token) {
+        Claims claims = extractClaims(token);
+        String tokenType = claims.get("token_type", String.class);
+        String jti = claims.getId();
+        if (!TOKEN_TYPE_REFRESH.equals(tokenType)
+                || claims.getAudience() == null
+                || !claims.getAudience().contains(jwtConfig.refreshAudience())
+                || jti == null
+                || jti.isBlank()) {
+            throw new InvalidTokenException("유효한 Refresh Token이 아닙니다.");
+        }
+        return claims;
     }
 
     private PrivateKey loadPrivateKey(String base64Pem) {
