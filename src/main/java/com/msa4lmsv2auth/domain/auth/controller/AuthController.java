@@ -41,8 +41,8 @@ public class AuthController {
     )
     @SecurityRequirements // 인증 없이 사용
     @CustomApiResponse(value = {
-            CustomResponseCode.NOT_REGISTERED_ERROR,
-            CustomResponseCode.INVALID_PARAMETER_ERROR,
+            CustomResponseCode.LOGIN_FAILED_ERROR,
+            CustomResponseCode.VALIDATION_ERROR,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
     })
@@ -72,8 +72,8 @@ public class AuthController {
     )
     @SecurityRequirements
     @CustomApiResponse(value = {
-            CustomResponseCode.NOT_REGISTERED_ERROR,
-            CustomResponseCode.INVALID_PARAMETER_ERROR,
+            CustomResponseCode.LOGIN_FAILED_ERROR,
+            CustomResponseCode.VALIDATION_ERROR,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
     })
@@ -103,8 +103,8 @@ public class AuthController {
     )
     @SecurityRequirements
     @CustomApiResponse(value = {
-            CustomResponseCode.NOT_REGISTERED_ERROR,
-            CustomResponseCode.INVALID_PARAMETER_ERROR,
+            CustomResponseCode.LOGIN_FAILED_ERROR,
+            CustomResponseCode.VALIDATION_ERROR,
             CustomResponseCode.DB_ERROR,
             CustomResponseCode.SYSTEM_ERROR
     })
