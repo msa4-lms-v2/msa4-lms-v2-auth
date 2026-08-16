@@ -4,6 +4,9 @@ import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.domain.auth.repository.AuthRepository;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
+import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
+import com.msa4lmsv2auth.global.error.custom.BusinessException;
+import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
 import com.msa4lmsv2auth.domain.auth.session.RefreshSession;
 import com.msa4lmsv2auth.domain.auth.session.RefreshSessionService;
@@ -173,6 +176,20 @@ public class AuthService {
     public void logout(HttpServletResponse response, long userId) {
         refreshSessionService.delete(userId);
         cookieManager.removeRefreshTokenToCookie(response);
+    }
+
+    // 비밀번호 변경
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(long userId, PasswordChangeRequestDTO request) {
+        Account account = authRepository.findById(userId)
+                .orElseThrow(() -> new NotRegisteredException("계정을 찾을 수 없습니다."));
+
+        if (!passwordEncoder.matches(request.currentPassword(), account.getPassword())) {
+            throw new BusinessException(CustomResponseCode.LOGIN_FAILED_ERROR, "현재 비밀번호가 일치하지 않습니다.");
+        }
+
+        account.setPassword(passwordEncoder.encode(request.newPassword()));
+        account.setRequiresPasswordChange(false);
     }
 
     private long parseUserId(String subject) {

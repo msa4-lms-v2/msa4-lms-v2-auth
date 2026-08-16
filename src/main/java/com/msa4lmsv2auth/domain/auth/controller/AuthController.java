@@ -1,6 +1,7 @@
 package com.msa4lmsv2auth.domain.auth.controller;
 
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
+import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
 import com.msa4lmsv2auth.domain.auth.service.AuthService;
 import com.msa4lmsv2auth.global.config.openapi.CustomApiResponse;
@@ -21,10 +22,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 
 @Tag(name = "Auth", description = "로그인, 토큰 재발급 및 로그아웃 API")
@@ -167,6 +170,31 @@ public class AuthController {
         long userId = Long.parseLong(authentication.getName());
 
         authService.logout(response, userId);
+
+        return ResponseEntity.ok(GlobalResponseDTO.success());
+    }
+
+    @Operation(
+            summary = "비밀번호 변경",
+            description = "현재 비밀번호를 확인한 뒤 새 비밀번호로 교체합니다.",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @CustomApiResponse(value = {
+            CustomResponseCode.LOGIN_FAILED_ERROR,
+            CustomResponseCode.UNAUTHENTICATED_ERROR,
+            CustomResponseCode.VALIDATION_ERROR,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PreAuthorize("isAuthenticated()")
+    @PatchMapping("/password")
+    public ResponseEntity<GlobalResponseDTO<Void>> changePassword(
+            Authentication authentication,
+            @Valid @RequestBody PasswordChangeRequestDTO request
+    ) {
+        long userId = Long.parseLong(authentication.getName());
+
+        authService.changePassword(userId, request);
 
         return ResponseEntity.ok(GlobalResponseDTO.success());
     }
