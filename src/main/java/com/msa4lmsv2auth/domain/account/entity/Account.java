@@ -44,7 +44,7 @@ public class Account {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(Types.VARCHAR)
     @Column(name = "status", nullable = false, length = 20)
-    private AccountStatus status = AccountStatus.PENDING;
+    private AccountStatus status = AccountStatus.PENDING_PROVISIONING;
 
     @Column(name = "refresh_token", length = 512)
     private String refreshToken;
@@ -99,7 +99,10 @@ public class Account {
 
     // 잠금 해제
     public void unlock() {
-        this.status = AccountStatus.ACTIVE;
+        this.status = this.requiresPasswordChange
+                ? AccountStatus.PENDING_PROVISIONING
+                : AccountStatus.ACTIVE;
+
         this.failedLoginAttempts = 0;
         this.lockedUntil = null;
     }

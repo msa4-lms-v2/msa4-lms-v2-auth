@@ -4,5 +4,5 @@ public enum AccountStatus {
     ACTIVE,
     INACTIVE,
     LOCKED,
-    PENDING
+    PENDING_PROVISIONING
 }
