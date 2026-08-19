@@ -93,10 +93,7 @@ public class Account {
 
     // 잠금 해제
     public void unlock() {
-        this.status = this.requiresPasswordChange
-                ? AccountStatus.PENDING_PROVISIONING
-                : AccountStatus.ACTIVE;
-
+        this.status = AccountStatus.ACTIVE;
         this.failedLoginAttempts = 0;
         this.lockedUntil = null;
     }
