@@ -39,7 +39,7 @@ INSERT INTO accounts (
           'ADMIN',
           'ACTIVE',
           0,
-          TRUE,
+          FALSE,
           NOW(),
           NOW()
       );

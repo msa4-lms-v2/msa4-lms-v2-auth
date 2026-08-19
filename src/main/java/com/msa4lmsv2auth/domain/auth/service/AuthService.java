@@ -5,36 +5,33 @@ import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.domain.auth.repository.AuthRepository;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
-import com.msa4lmsv2auth.global.error.custom.BusinessException;
-import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
 import com.msa4lmsv2auth.domain.auth.session.RefreshSession;
 import com.msa4lmsv2auth.domain.auth.session.RefreshSessionService;
 import com.msa4lmsv2auth.global.cookie.CookieManager;
+import com.msa4lmsv2auth.global.error.custom.BusinessException;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
 import com.msa4lmsv2auth.global.error.custom.business.NotRegisteredException;
 import com.msa4lmsv2auth.global.error.custom.business.RefreshSessionUnavailableException;
 import com.msa4lmsv2auth.global.jwt.JwtProvider;
+import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.dao.DataAccessException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
-    private static final long LOCK_DURATION_MINUTES = 15;
     private static final Duration DB_OUTAGE_REFRESH_GRACE_PERIOD = Duration.ofHours(3);
 
     private final AuthRepository authRepository;
@@ -44,7 +41,10 @@ public class AuthService {
     private final RefreshSessionService refreshSessionService;
 
     // 로그인
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(
+            rollbackFor = Exception.class,
+            noRollbackFor = NotRegisteredException.class
+    )
     public AuthResponseDTO login(
             HttpServletResponse response,
             LoginRequestDTO loginRequestDTO,
@@ -60,36 +60,31 @@ public class AuthService {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
-        // 계정 상태 확인 (활성 계정만 로그인 허용)
-        if (account.getStatus() != AccountStatus.ACTIVE) {
-            throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
+        // 계정 잠금은 상태로 판단하고, 만료 시각이 지난 경우 원래 상태로 복원한다.
+        if (account.isLocked()) {
+            if (account.isLockExpired()) {
+                account.unlock();
+            } else {
+                throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
+            }
         }
 
-        // 잠금 여부 확인
-        if (account.getLockedUntil() != null && account.getLockedUntil().isAfter(LocalDateTime.now())) {
+        // 잠금 해제 후에도 활성 계정만 일반 로그인을 허용한다.
+        if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
         // 비밀번호 체크
         if (!passwordEncoder.matches(loginRequestDTO.password(), account.getPassword())) {
-            registerFailedAttempt(account);
+            account.increaseFailedLoginAttempts();
+            authRepository.save(account);
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
-        account.setFailedLoginAttempts(0);
-        account.setLockedUntil(null);
+        account.resetFailedLoginAttempts();
         authRepository.save(account);
 
         return this.generateAuthentication(response, account);
-    }
-
-    private void registerFailedAttempt(Account account) {
-        int attempts = account.getFailedLoginAttempts() + 1;
-        account.setFailedLoginAttempts(attempts);
-        if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-            account.setLockedUntil(LocalDateTime.now().plusMinutes(LOCK_DURATION_MINUTES));
-        }
-        authRepository.save(account);
     }
 
     // 토큰 생성
@@ -112,6 +107,7 @@ public class AuthService {
     }
 
     // 토큰 재발급
+    @Transactional(rollbackFor = Exception.class)
     public AuthResponseDTO reissue(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = cookieManager.getRefreshTokenToCookie(request)
                 .orElseThrow(() -> new InvalidTokenException("리프래시 토큰 없음"));
@@ -173,6 +169,7 @@ public class AuthService {
     }
 
     // 로그아웃
+    @Transactional(rollbackFor = Exception.class)
     public void logout(HttpServletResponse response, long userId) {
         refreshSessionService.delete(userId);
         cookieManager.removeRefreshTokenToCookie(response);

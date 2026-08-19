@@ -5,6 +5,8 @@ import com.msa4lmsv2auth.global.cookie.CookieManager;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
 
 import java.security.KeyFactory;
