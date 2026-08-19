@@ -25,6 +25,15 @@ spring:
       maximum-pool-size: 10
       connection-timeout: 30000
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_TIMEOUT:2s}
+
   # JPA
   jpa:
     hibernate:
@@ -60,19 +69,23 @@ logging:
     name: logs/error.log
   level:
     root: info
-    com.msameerkatgramv2auth.controllers: debug
-    com.msameerkatgramv2auth.global.errors: debug
+    com.msa4lmsv2auth.controllers: debug
+    com.msa4lmsv2auth.global.errors: debug
 
 # Security & JWT
 jwt:
   secure: false
   issuer: meerkat@meerkat.kr
   type: JWT
-  access-token-expiry: 100000000
+  access-token-expiry: 900000
   refresh-token-expiry: 1296000000
   refresh-token-cookie-name: refresh-token
   refresh-token-cookie-expiry: 1296000
-  secret: ${JWT_SECRET}
+  kid: ${JWT_KID}
+  private-key-b64: ${JWT_PRIVATE_KEY_B64}
+  public-key-b64: ${JWT_PUBLIC_KEY_B64}
+  access-audience: lms-api
+  refresh-audience: lms-auth
   header-key: Authorization
   scheme: Bearer
   reissue-uri: /api/auth/reissue-token

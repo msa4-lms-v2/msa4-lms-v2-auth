@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     // -------------------------------------
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handle(AccessDeniedException e) {
-        log.debug(CustomResponseCode.UNAUTHORIZED_ERROR.name(), e);
+        log.debug(CustomResponseCode.FORBIDDEN_ERROR.name(), e);
         // 현재 로그인한 사용자의 정보를 컨텍스트에서 확인
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -56,14 +56,14 @@ public class GlobalExceptionHandler {
         }
 
         // 로그인은 했으나 권한(Role)이 부족한 경우 (인가 실패 - 403)
-        return this.generateErrorResponse(CustomResponseCode.UNAUTHORIZED_ERROR);
+        return this.generateErrorResponse(CustomResponseCode.FORBIDDEN_ERROR);
     }
 
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handle(MethodArgumentTypeMismatchException e) {
-        log.debug("{}\n{}", CustomResponseCode.INVALID_PARAMETER_ERROR.name(), String.format("%s : 필드를 확인해 주세요.", e.getName()));
-        return this.generateErrorResponse(CustomResponseCode.INVALID_PARAMETER_ERROR);
+        log.debug("{}\n{}", CustomResponseCode.VALIDATION_ERROR.name(), String.format("%s : 필드를 확인해 주세요.", e.getName()));
+        return this.generateErrorResponse(CustomResponseCode.VALIDATION_ERROR);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -77,20 +77,20 @@ public class GlobalExceptionHandler {
                         (existing, replacement) -> existing // 중복 필드가 있을 경우 기존 값 유지
                 ));
 
-        log.debug("{}\n{}", CustomResponseCode.INVALID_PARAMETER_ERROR.name(), errors);
-        return this.generateErrorResponse(CustomResponseCode.INVALID_PARAMETER_ERROR);
+        log.debug("{}\n{}", CustomResponseCode.VALIDATION_ERROR.name(), errors);
+        return this.generateErrorResponse(CustomResponseCode.VALIDATION_ERROR);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handle(NoResourceFoundException e) {
-        log.debug(CustomResponseCode.NOT_FOUND_ERROR.name(), e);
-        return this.generateErrorResponse(CustomResponseCode.NOT_FOUND_ERROR);
+        log.debug(CustomResponseCode.DATA_NOT_FOUND_ERROR.name(), e);
+        return this.generateErrorResponse(CustomResponseCode.DATA_NOT_FOUND_ERROR);
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<GlobalResponseDTO<Void>> handle(DuplicateKeyException e) {
         log.error("DB 에러", e);
-        return this.generateErrorResponse(CustomResponseCode.DB_DUPLICATED_KEY_ERROR);
+        return this.generateErrorResponse(CustomResponseCode.DUPLICATE_ERROR);
     }
 
     @ExceptionHandler(DataAccessException.class)

@@ -5,6 +5,6 @@ import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 
 public class FileManagedException extends BusinessException {
     public FileManagedException(String message) {
-        super(CustomResponseCode.FILE_MANAGED_ERROR, message);
+        super(CustomResponseCode.SYSTEM_ERROR, message);
     }
 }

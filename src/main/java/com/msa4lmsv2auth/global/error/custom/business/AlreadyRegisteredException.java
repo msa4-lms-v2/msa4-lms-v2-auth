@@ -6,6 +6,6 @@ import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 
 public class AlreadyRegisteredException extends BusinessException {
     public AlreadyRegisteredException(String message) {
-        super(CustomResponseCode.ALREADY_REGISTERED_ERROR ,message);
+        super(CustomResponseCode.DUPLICATE_ERROR, message);
     }
 }

@@ -5,6 +5,6 @@ import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 
 public class NotRegisteredException extends BusinessException {
     public NotRegisteredException(String message) {
-        super(CustomResponseCode.NOT_REGISTERED_ERROR, message);
+        super(CustomResponseCode.LOGIN_FAILED_ERROR, message);
     }
 }

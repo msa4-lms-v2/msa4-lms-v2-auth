@@ -20,10 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthService {
 
+    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
+    private static final long LOCK_DURATION_MINUTES = 15;
+    private static final Duration DB_OUTAGE_REFRESH_GRACE_PERIOD = Duration.ofHours(3);
+
     private final AuthRepository authRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final CookieManager cookieManager;
+    private final RefreshSessionService refreshSessionService;
 
     // 로그인
     @Transactional(
@@ -45,29 +50,36 @@ public class AuthService {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
-        // 잠긴 계정인지 확인
-        if(account.isLocked()) {
-            if(account.isLockExpired()) {
-                account.unlock();
-            } else {
-                throw new IllegalStateException("잠긴 계정입니다.");
-            }
-        }
-
-
-        // 비밀번호 체크
-        if(!passwordEncoder.matches(loginRequestDTO.password(), account.getPassword())) {
-            account.increaseFailedLoginAttempts();
+        // 계정 상태 확인 (활성 계정만 로그인 허용)
+        if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
-        account.resetFailedLoginAttempts();
 
-        // 최초 로그인 여부 확인
-        if(account.isRequiresPasswordChange()) {
-            return generatePasswordChangeAuthentication(account);
+        // 잠금 여부 확인
+        if (account.getLockedUntil() != null && account.getLockedUntil().isAfter(LocalDateTime.now())) {
+            throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
+        // 비밀번호 체크
+        if (!passwordEncoder.matches(loginRequestDTO.password(), account.getPassword())) {
+            registerFailedAttempt(account);
+            throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
+        }
+
+        account.setFailedLoginAttempts(0);
+        account.setLockedUntil(null);
+        authRepository.save(account);
+
         return this.generateAuthentication(response, account);
+    }
+
+    private void registerFailedAttempt(Account account) {
+        int attempts = account.getFailedLoginAttempts() + 1;
+        account.setFailedLoginAttempts(attempts);
+        if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+            account.setLockedUntil(LocalDateTime.now().plusMinutes(LOCK_DURATION_MINUTES));
+        }
+        authRepository.save(account);
     }
 
     // 토큰 생성
@@ -75,21 +87,18 @@ public class AuthService {
         String accessToken = jwtProvider.generateAccessToken(account);
         String refreshToken = jwtProvider.generateRefreshToken(account);
 
-        // refresh DB 저장
-        account.setRefreshToken(refreshToken);
-        authRepository.save(account);
+        Claims refreshClaims = jwtProvider.extractRefreshClaims(refreshToken);
+        refreshSessionService.create(
+                account,
+                refreshClaims.getId(),
+                refreshClaims.getExpiration().toInstant(),
+                Instant.now()
+        );
 
         // refresh cookie 저장
         cookieManager.setRefreshTokenToCookie(response, refreshToken);
 
         return AuthResponseDTO.from(account, accessToken);
-    }
-
-    // 최초 로그인 시 임시 토큰 발급
-    private AuthResponseDTO generatePasswordChangeAuthentication(Account account) {
-        String passwordChangeToken  = jwtProvider.generatePasswordChangeToken(account);
-
-        return AuthResponseDTO.forPasswordChange(account, passwordChangeToken);
     }
 
     // 토큰 재발급
@@ -98,32 +107,88 @@ public class AuthService {
         String refreshToken = cookieManager.getRefreshTokenToCookie(request)
                 .orElseThrow(() -> new InvalidTokenException("리프래시 토큰 없음"));
 
-        long userId = Long.parseLong(jwtProvider.extractClaims(refreshToken).getSubject());
+        Claims refreshClaims = jwtProvider.extractRefreshClaims(refreshToken);
+        long userId = parseUserId(refreshClaims.getSubject());
+        RefreshSession currentSession = refreshSessionService.validate(userId, refreshClaims.getId());
 
-        Account account = authRepository.findById(userId)
-                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 회원의 토큰입니다."));
-
-        if(account.getRefreshToken() == null) {
-            throw new InvalidTokenException("비로그인 상태입니다.");
+        Account account = null;
+        boolean dbVerified = false;
+        try {
+            account = authRepository.findById(userId).orElse(null);
+            dbVerified = true;
+        } catch (DataAccessException ignored) {
+            if (Duration.between(currentSession.lastDbVerifiedAt(), Instant.now())
+                    .compareTo(DB_OUTAGE_REFRESH_GRACE_PERIOD) > 0) {
+                throw new RefreshSessionUnavailableException(
+                        "Auth DB 확인 유예 시간이 만료되어 토큰을 재발급할 수 없습니다."
+                );
+            }
         }
 
-        if(!account.getRefreshToken().equals(refreshToken)) {
-            throw new InvalidTokenException("토큰이 일치하지 않습니다.");
+        if (dbVerified && account == null) {
+            refreshSessionService.delete(userId);
+            throw new InvalidTokenException("유효하지 않은 회원의 토큰입니다.");
         }
 
-        return this.generateAuthentication(response, account);
+        if (account != null && account.getStatus() != AccountStatus.ACTIVE) {
+            refreshSessionService.delete(userId);
+            throw new InvalidTokenException("계정 상태로 인해 재발급할 수 없습니다.");
+        }
+
+        Role role = account != null ? account.getRole() : currentSession.role();
+        String accessToken = jwtProvider.generateAccessToken(userId, role);
+        String newRefreshToken = jwtProvider.generateRefreshToken(userId, role);
+        Claims newRefreshClaims = jwtProvider.extractRefreshClaims(newRefreshToken);
+
+        RefreshSession nextSession;
+        if (account != null) {
+            nextSession = refreshSessionService.rotate(
+                    currentSession,
+                    account,
+                    newRefreshClaims.getId(),
+                    newRefreshClaims.getExpiration().toInstant(),
+                    Instant.now()
+            );
+        } else {
+            nextSession = refreshSessionService.rotateWithoutDbVerification(
+                    currentSession,
+                    newRefreshClaims.getId(),
+                    newRefreshClaims.getExpiration().toInstant()
+            );
+        }
+
+        cookieManager.setRefreshTokenToCookie(response, newRefreshToken);
+        return account != null
+                ? AuthResponseDTO.from(account, accessToken)
+                : AuthResponseDTO.from(nextSession, accessToken);
     }
 
     // 로그아웃
     @Transactional(rollbackFor = Exception.class)
     public void logout(HttpServletResponse response, long userId) {
-        Account account = authRepository.findById(userId)
-                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 회원입니다."));
-
-        account.setRefreshToken(null);
-        authRepository.save(account);
-
+        refreshSessionService.delete(userId);
         cookieManager.removeRefreshTokenToCookie(response);
+    }
 
+    // 비밀번호 변경
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(long userId, PasswordChangeRequestDTO request) {
+        Account account = authRepository.findById(userId)
+                .orElseThrow(() -> new NotRegisteredException("계정을 찾을 수 없습니다."));
+
+        if (!passwordEncoder.matches(request.currentPassword(), account.getPassword())) {
+            throw new BusinessException(CustomResponseCode.LOGIN_FAILED_ERROR, "현재 비밀번호가 일치하지 않습니다.");
+        }
+
+        account.setPassword(passwordEncoder.encode(request.newPassword()));
+        account.setRequiresPasswordChange(false);
+    }
+
+    private long parseUserId(String subject) {
+        try {
+            return Long.parseLong(subject);
+        } catch (NumberFormatException e) {
+            throw new InvalidTokenException("토큰의 사용자 식별자가 올바르지 않습니다.");
+        }
     }
 }

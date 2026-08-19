@@ -5,8 +5,11 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -46,16 +49,19 @@ public class CookieManager {
                 .findFirst(); // Optional객체를 반환
     }
 
-    // 쿠키 생성 메소드
-    // 쿠킹 세팅만 하면 되니 리턴 할 값이 없음 void로 생성
+    // 쿠키 생성 메소드 - jakarta.servlet.http.Cookie는 SameSite를 지원하지 않아 Spring ResponseCookie로 직접 Set-Cookie 헤더를 만든다.
+    // Refresh 쿠키는 reissue-uri 하나에서만 쓰이고 SameSite=Strict로도 정상 동작하므로,
+    // 별도 CSRF 토큰 체계 없이 SameSite=Strict 자체를 이 쿠키의 CSRF 방어로 삼는다(5.5).
     private void setCookie(HttpServletResponse response, String name, String value, int maxAge, String path) {
-        Cookie cookie = new Cookie(name, value); // 해당 이름과 값으로 쿠키 인스턴스 생성
-        cookie.setPath(path); // 쿠키를 사용할 path 설정
-        cookie.setMaxAge(maxAge); // 쿠키 유효 시간 설정
-        cookie.setHttpOnly(true); // HTTPOnly 설정: XSS 공격 방지 설정 (설정시 자바스크립트로는 쿠키에 접근 불가)
-        cookie.setSecure(jwtConfig.secure()); // Secure 설정: true시 HTTPS 사용 (MITM 공격 방지)
+        ResponseCookie cookie = ResponseCookie.from(name, value == null ? "" : value)
+                .path(path)
+                .maxAge(Duration.ofSeconds(Math.max(maxAge, 0)))
+                .httpOnly(true) // HTTPOnly 설정: XSS 공격 방지 설정 (설정시 자바스크립트로는 쿠키에 접근 불가)
+                .secure(jwtConfig.secure()) // Secure 설정: true시 HTTPS 사용 (MITM 공격 방지)
+                .sameSite("Strict") // 같은 사이트 요청에서만 전송 - CSRF 방어
+                .build();
 
-        response.addCookie(cookie);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     public void removeRefreshTokenToCookie(HttpServletResponse response) {
