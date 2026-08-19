@@ -13,7 +13,6 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.sql.Types;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -71,17 +70,15 @@ public class Account {
 
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final long LOCK_DURATION_MINUTES = 15;
 
     // 실패 횟수 증가, 잠금 처리
     public void increaseFailedLoginAttempts() {
         this.failedLoginAttempts++;
 
-        if(this.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+        if (this.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
             this.status = AccountStatus.LOCKED;
-            // 다음 날 00:00에 잠금 해제
-            this.lockedUntil = LocalDate.now()
-                    .plusDays(1)
-                    .atStartOfDay();
+            this.lockedUntil = LocalDateTime.now().plusMinutes(LOCK_DURATION_MINUTES);
         }
     }
 
@@ -110,5 +107,6 @@ public class Account {
     // 로그인 성공 시 실패 횟수 초기화
     public void resetFailedLoginAttempts() {
         this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
     }
 }
