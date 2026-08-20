@@ -29,7 +29,7 @@ public class Account {
     @Column(name = "id", columnDefinition = "BIGINT UNSIGNED")
     private long id;
 
-    @Column(name = "login_id", unique = true, nullable = false, length = 150)
+    @Column(name = "login_id", unique = true, length = 150)
     private String loginId;
 
     @Column(name = "password", nullable = false, length = 255)

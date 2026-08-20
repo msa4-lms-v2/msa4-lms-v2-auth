@@ -2,7 +2,7 @@ package com.msa4lmsv2auth.domain.auth.service;
 
 import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.domain.account.entity.Account;
-import com.msa4lmsv2auth.domain.auth.repository.AuthRepository;
+import com.msa4lmsv2auth.domain.account.repository.AccountRepository;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
@@ -34,11 +34,11 @@ public class AuthService {
 
     private static final Duration DB_OUTAGE_REFRESH_GRACE_PERIOD = Duration.ofHours(3);
 
-    private final AuthRepository authRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final CookieManager cookieManager;
     private final RefreshSessionService refreshSessionService;
+    private final AccountRepository accountRepository;
 
     // 로그인
     @Transactional(
@@ -52,7 +52,7 @@ public class AuthService {
     ) {
 
         // user 정보 획득, 가입 여부 체크
-        Account account = authRepository.findByLoginId(loginRequestDTO.loginId())
+        Account account = accountRepository.findByLoginId(loginRequestDTO.loginId())
                 .orElseThrow(() -> new NotRegisteredException("아이디와 비밀번호를 확인해주세요."));
 
         // 로그인 유형과 계정 역할 확인
@@ -77,12 +77,12 @@ public class AuthService {
         // 비밀번호 체크
         if (!passwordEncoder.matches(loginRequestDTO.password(), account.getPassword())) {
             account.increaseFailedLoginAttempts();
-            authRepository.save(account);
+            accountRepository.save(account);
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
         account.resetFailedLoginAttempts();
-        authRepository.save(account);
+        accountRepository.save(account);
 
         return this.generateAuthentication(response, account);
     }
@@ -119,7 +119,7 @@ public class AuthService {
         Account account = null;
         boolean dbVerified = false;
         try {
-            account = authRepository.findById(userId).orElse(null);
+            account = accountRepository.findById(userId).orElse(null);
             dbVerified = true;
         } catch (DataAccessException ignored) {
             if (Duration.between(currentSession.lastDbVerifiedAt(), Instant.now())
@@ -178,7 +178,7 @@ public class AuthService {
     // 비밀번호 변경
     @Transactional(rollbackFor = Exception.class)
     public void changePassword(long userId, PasswordChangeRequestDTO request) {
-        Account account = authRepository.findById(userId)
+        Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new NotRegisteredException("계정을 찾을 수 없습니다."));
 
         if (!passwordEncoder.matches(request.currentPassword(), account.getPassword())) {

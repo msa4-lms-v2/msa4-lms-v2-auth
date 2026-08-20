@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 
 public record AccountResponseDTO(
         Long id
-        , String login_id
+        , String loginId
         , Role role
         , AccountStatus status
         , boolean requiresPasswordChange
