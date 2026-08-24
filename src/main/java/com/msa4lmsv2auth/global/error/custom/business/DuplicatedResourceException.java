@@ -6,6 +6,6 @@ import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 
 public class DuplicatedResourceException extends BusinessException {
     public DuplicatedResourceException(String message) {
-        super(CustomResponseCode.DUPLICATED_RESOURCE_ERROR ,message);
+        super(CustomResponseCode.DUPLICATE_ERROR, message);
     }
 }

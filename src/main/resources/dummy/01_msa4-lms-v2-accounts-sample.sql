@@ -1,5 +1,6 @@
 DELETE FROM accounts;
 INSERT INTO accounts (
+    id,
     login_id,
     password,
     role,
@@ -10,6 +11,7 @@ INSERT INTO accounts (
     updated_at
 ) VALUES
       (
+          1,
           '26001001',
           '$2a$10$GoVsP4BH9AsO74rttdEiu.bf2h0oebo/i9214C7W.1Kj7kmU3vHES',
           'STUDENT',
@@ -20,6 +22,7 @@ INSERT INTO accounts (
           NOW()
       ),
       (
+          2,
           'p26001001',
           '$2a$10$GoVsP4BH9AsO74rttdEiu.bf2h0oebo/i9214C7W.1Kj7kmU3vHES',
           'PROFESSOR',
@@ -30,12 +33,13 @@ INSERT INTO accounts (
           NOW()
       ),
       (
+          3,
           'a26001001',
           '$2a$10$GoVsP4BH9AsO74rttdEiu.bf2h0oebo/i9214C7W.1Kj7kmU3vHES',
           'ADMIN',
           'ACTIVE',
           0,
-          TRUE,
+          FALSE,
           NOW(),
           NOW()
       );

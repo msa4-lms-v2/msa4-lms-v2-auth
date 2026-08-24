@@ -2,15 +2,7 @@ package com.msa4lmsv2auth.domain.account.entity;
 
 import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.global.security.constant.Role;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -37,7 +29,7 @@ public class Account {
     @Column(name = "id", columnDefinition = "BIGINT UNSIGNED")
     private long id;
 
-    @Column(name = "login_id", unique = true, nullable = false, length = 150)
+    @Column(name = "login_id", unique = true, length = 150)
     private String loginId;
 
     @Column(name = "password", nullable = false, length = 255)
@@ -51,10 +43,7 @@ public class Account {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(Types.VARCHAR)
     @Column(name = "status", nullable = false, length = 20)
-    private AccountStatus status = AccountStatus.PENDING;
-
-    @Column(name = "refresh_token", length = 512)
-    private String refreshToken;
+    private AccountStatus status = AccountStatus.PENDING_PROVISIONING;
 
     @Column(name = "failed_login_attempts", nullable = false)
     private int failedLoginAttempts;
@@ -75,4 +64,43 @@ public class Account {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final long LOCK_DURATION_MINUTES = 15;
+
+    // 실패 횟수 증가, 잠금 처리
+    public void increaseFailedLoginAttempts() {
+        this.failedLoginAttempts++;
+
+        if (this.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+            this.status = AccountStatus.LOCKED;
+            this.lockedUntil = LocalDateTime.now().plusMinutes(LOCK_DURATION_MINUTES);
+        }
+    }
+
+    // 잠긴 계정인지 확인
+    public boolean isLocked() {
+        return this.status == AccountStatus.LOCKED;
+    }
+
+    // 잠긴 시간이 끝났는지 확인 / 현재시간 >= lockedUntil
+    public boolean isLockExpired() {
+        return this.isLocked()
+                && this.lockedUntil != null
+                && !LocalDateTime.now().isBefore(this.lockedUntil);
+    }
+
+    // 잠금 해제
+    public void unlock() {
+        this.status = AccountStatus.ACTIVE;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
+
+    // 로그인 성공 시 실패 횟수 초기화
+    public void resetFailedLoginAttempts() {
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+    }
 }

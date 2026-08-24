@@ -57,9 +57,6 @@ public class AuditLog {
     @Column(name = "reason", length = 500)
     private String reason;
 
-    @Column(name = "request_id", length = 100)
-    private String requestId;
-
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
 

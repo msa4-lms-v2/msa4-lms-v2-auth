@@ -8,12 +8,12 @@ public record GlobalResponseDTO<T> (
         , T data
 ){
     public static <T> GlobalResponseDTO<T> from(CustomResponseCode customResponseCode, T data){
-        return new GlobalResponseDTO<T>(customResponseCode.getCode(), customResponseCode.name(), data);
+        return new GlobalResponseDTO<T>(customResponseCode.getCode(), customResponseCode.getMessage(), data);
     }
 
     // data가 null인 경우
     public static GlobalResponseDTO<Void> from(CustomResponseCode customResponseCode){
-        return new GlobalResponseDTO<Void>(customResponseCode.getCode(), customResponseCode.name(), null);
+        return new GlobalResponseDTO<Void>(customResponseCode.getCode(), customResponseCode.getMessage(), null);
     }
 
     // SUCCESS
