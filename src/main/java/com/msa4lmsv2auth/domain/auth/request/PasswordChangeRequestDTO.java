@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Pattern;
 
 @Schema(description = "비밀번호 변경 요청")
 public record PasswordChangeRequestDTO(
-        @Schema(description = "현재 비밀번호. 최초 로그인에서는 발급받은 임시 비밀번호를 입력합니다.", example = "password123!")
+        @Schema(description = "현재 사용 중인 비밀번호", example = "CurrentPassword123!")
         @NotBlank(message = "현재 비밀번호는 필수입니다.")
         String currentPassword,
 
