@@ -81,9 +81,22 @@ public class AuthService {
             throw new NotRegisteredException("아이디와 비밀번호를 확인해주세요.");
         }
 
+        // 로그인 검증 성공
         account.resetFailedLoginAttempts();
         accountRepository.save(account);
 
+        // 최초 로그인시 임시 토큰 발급
+        if (account.isRequiresPasswordChange()) {
+            String passwordChangeToken =
+                    jwtProvider.generatePasswordChangeToken(account);
+
+            return AuthResponseDTO.forPasswordChange(
+                    account,
+                    passwordChangeToken
+            );
+        }
+
+        // 일반 로그인 인증
         return this.generateAuthentication(response, account);
     }
 
@@ -175,18 +188,67 @@ public class AuthService {
         cookieManager.removeRefreshTokenToCookie(response);
     }
 
-    // 비밀번호 변경
-    @Transactional(rollbackFor = Exception.class)
-    public void changePassword(long userId, PasswordChangeRequestDTO request) {
-        Account account = accountRepository.findById(userId)
-                .orElseThrow(() -> new NotRegisteredException("계정을 찾을 수 없습니다."));
+    // 일반 로그인 후 변경
+   @Transactional(rollbackFor = Exception.class)
+   public void changePassword(long userId, PasswordChangeRequestDTO request) {
+        Account account = findAccount(userId);
 
-        if (!passwordEncoder.matches(request.currentPassword(), account.getPassword())) {
-            throw new BusinessException(CustomResponseCode.LOGIN_FAILED_ERROR, "현재 비밀번호가 일치하지 않습니다.");
+       changePasswordInternal(account, request);
+   }
+
+   // 최초 로그인 변경
+   @Transactional(rollbackFor = Exception.class)
+   public void changeInitialPassword(long userId, PasswordChangeRequestDTO request) {
+        Account account = findAccount(userId);
+
+        if(!account.isRequiresPasswordChange()) {
+            throw new BusinessException(
+                    CustomResponseCode.VALIDATION_ERROR,
+                    "최초 비밀번호 변경 대상 계정이 아닙니다."
+            );
         }
 
-        account.setPassword(passwordEncoder.encode(request.newPassword()));
-        account.setRequiresPasswordChange(false);
+       changePasswordInternal(account, request);
+       account.setRequiresPasswordChange(false);
+
+   }
+
+   // 공통 비밀번호 변경
+    private void changePasswordInternal(
+            Account account,
+            PasswordChangeRequestDTO request
+    ) {
+        if (!passwordEncoder.matches(
+                request.currentPassword(),
+                account.getPassword()
+        )) {
+            throw new BusinessException(
+                    CustomResponseCode.LOGIN_FAILED_ERROR,
+                    "현재 비밀번호가 일치하지 않습니다."
+            );
+        }
+
+        if (passwordEncoder.matches(
+                request.newPassword(),
+                account.getPassword()
+        )) {
+            throw new BusinessException(
+                    CustomResponseCode.VALIDATION_ERROR,
+                    "새 비밀번호는 현재 비밀번호와 달라야 합니다."
+            );
+        }
+
+        account.setPassword(
+                passwordEncoder.encode(request.newPassword())
+        );
+    }
+
+
+    private Account findAccount(long userId) {
+        return accountRepository.findById(userId)
+                .orElseThrow(() ->
+                        new NotRegisteredException("계정을 찾을 수 없습니다.")
+                );
     }
 
     private long parseUserId(String subject) {

@@ -5,9 +5,12 @@ import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
 import com.msa4lmsv2auth.domain.auth.service.AuthService;
 import com.msa4lmsv2auth.global.config.openapi.CustomApiResponse;
+import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
+import com.msa4lmsv2auth.global.jwt.JwtProvider;
 import com.msa4lmsv2auth.global.response.GlobalResponseDTO;
 import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 import com.msa4lmsv2auth.global.security.constant.Role;
+import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -22,12 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.*;
 
 
 @Tag(name = "Auth", description = "로그인, 토큰 재발급 및 로그아웃 API")
@@ -36,10 +34,11 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService authService;
+    private final JwtProvider jwtProvider;
 
     @Operation(
             summary = "학생 로그인",
-            description = "로그인 ID와 비밀번호를 학생 계정으로 검증하고 JWT를 발급합니다.",
+            description = "로그인 ID와 비밀번호를 학생 계정으로 검증합니다. 최초 로그인 계정에는 일반 Access Token 대신 비밀번호 변경 전용 토큰을 발급합니다.",
             security = {}
     )
     @SecurityRequirements // 인증 없이 사용
@@ -70,7 +69,7 @@ public class AuthController {
 
     @Operation(
             summary = "교수 로그인",
-            description = "로그인 ID와 비밀번호를 교수 계정으로 검증하고 JWT를 발급합니다.",
+            description = "로그인 ID와 비밀번호를 교수 계정으로 검증합니다. 최초 로그인 계정에는 일반 Access Token 대신 비밀번호 변경 전용 토큰을 발급합니다.",
             security = {}
     )
     @SecurityRequirements
@@ -101,7 +100,7 @@ public class AuthController {
 
     @Operation(
             summary = "관리자 로그인",
-            description = "로그인 ID와 비밀번호를 관리자 계정으로 검증하고 JWT를 발급합니다.",
+            description = "로그인 ID와 비밀번호를 관리자 계정으로 검증합니다. 최초 로그인 계정에는 일반 Access Token 대신 비밀번호 변경 전용 토큰을 발급합니다.",
             security = {}
     )
     @SecurityRequirements
@@ -174,6 +173,8 @@ public class AuthController {
         return ResponseEntity.ok(GlobalResponseDTO.success());
     }
 
+
+    // 일반 비밀번호 변경: AccessToken 사용
     @Operation(
             summary = "비밀번호 변경",
             description = "현재 비밀번호를 확인한 뒤 새 비밀번호로 교체합니다.",
@@ -197,5 +198,55 @@ public class AuthController {
         authService.changePassword(userId, request);
 
         return ResponseEntity.ok(GlobalResponseDTO.success());
+    }
+
+    // 최초 비밀번호 변경: Password Change Token 사용
+    @Operation(
+            summary = "최초 로그인 비밀번호 변경",
+            description = "최초 로그인 응답으로 발급된 비밀번호 변경 전용 토큰을 사용하여 임시 비밀번호를 새 비밀번호로 변경합니다. 일반 Access Token은 사용할 수 없습니다.",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @CustomApiResponse(value = {
+            CustomResponseCode.LOGIN_FAILED_ERROR,
+            CustomResponseCode.INVALID_TOKEN_ERROR,
+            CustomResponseCode.VALIDATION_ERROR,
+            CustomResponseCode.DB_ERROR,
+            CustomResponseCode.SYSTEM_ERROR
+    })
+    @PatchMapping("/initial-password")
+    public ResponseEntity<GlobalResponseDTO<Void>> changeInitialPassword(
+            @RequestHeader("Authorization") String authorization,
+            @Valid @RequestBody PasswordChangeRequestDTO request
+    ) {
+        String token = resolveBearerToken(authorization);
+
+        Claims claims =
+                jwtProvider.extractPasswordChangeClaims(token);
+
+        long userId = Long.parseLong(claims.getSubject());
+
+        authService.changeInitialPassword(userId, request);
+
+        return ResponseEntity.ok(GlobalResponseDTO.success());
+    }
+
+    // Authorization 헤더에서 Bearer 토큰의 실제 토큰 문자열만 추출하는 코드
+    private String resolveBearerToken(String authorization) {
+        if (authorization == null
+                || !authorization.startsWith("Bearer ")) {
+            throw new InvalidTokenException(
+                    "Authorization 헤더가 올바르지 않습니다."
+            );
+        }
+
+        String token = authorization.substring(7);
+
+        if (token.isBlank()) {
+            throw new InvalidTokenException(
+                    "토큰이 존재하지 않습니다."
+            );
+        }
+
+        return token;
     }
 }

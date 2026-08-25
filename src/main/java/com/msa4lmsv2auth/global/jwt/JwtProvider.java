@@ -5,8 +5,6 @@ import com.msa4lmsv2auth.global.cookie.CookieManager;
 import com.msa4lmsv2auth.global.error.custom.business.InvalidTokenException;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import io.jsonwebtoken.*;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
 
 import java.security.KeyFactory;
@@ -23,6 +21,8 @@ public class JwtProvider {
 
     private static final String TOKEN_TYPE_ACCESS = "access";
     private static final String TOKEN_TYPE_REFRESH = "refresh";
+    private static final String TOKEN_TYPE_PASSWORD_CHANGE = "password_change";
+    private static final int PASSWORD_CHANGE_TOKEN_EXPIRY = 10 * 60 * 1000;
 
     private final JwtConfig jwtConfig;
     private final PrivateKey privateKey;
@@ -42,6 +42,14 @@ public class JwtProvider {
         return generateRefreshToken(account.getId(), account.getRole());
     }
 
+    // 임시 토큰 발급
+    public String generatePasswordChangeToken(Account account) {
+        return generatePasswordChangeToken(
+                account.getId(),
+                account.getRole()
+        );
+    }
+
     public String generateAccessToken(long userId, Role role) {
         return generateToken(userId, role, jwtConfig.accessTokenExpiry(), TOKEN_TYPE_ACCESS, jwtConfig.accessAudience(), null);
     }
@@ -49,6 +57,8 @@ public class JwtProvider {
     public String generateRefreshToken(long userId, Role role) {
         return generateToken(userId, role, jwtConfig.refreshTokenExpiry(), TOKEN_TYPE_REFRESH, jwtConfig.refreshAudience(), UUID.randomUUID().toString());
     }
+
+
 
     private String generateToken(long userId, Role role, int ttl, String tokenType, String audience, String jti) {
         Date now = new Date();
@@ -72,6 +82,19 @@ public class JwtProvider {
         }
 
         return builder.signWith(privateKey).compact();
+    }
+
+    // 임시 토큰 생성
+    public String generatePasswordChangeToken(long userId, Role role) {
+        return generateToken(
+                userId,
+                role,
+                jwtConfig.passwordChangeTokenExpiry(),
+                TOKEN_TYPE_PASSWORD_CHANGE,
+                jwtConfig.passwordChangeAudience(),
+                null
+        );
+
     }
 
     public Claims extractClaims(String token) {
@@ -103,6 +126,26 @@ public class JwtProvider {
                 || jti.isBlank()) {
             throw new InvalidTokenException("유효한 Refresh Token이 아닙니다.");
         }
+        return claims;
+    }
+
+    // 임시 토큰 검증
+    public Claims extractPasswordChangeClaims(String token) {
+        Claims claims = extractClaims(token);
+
+        String tokenType =
+                claims.get("token_type", String.class);
+
+        if (!TOKEN_TYPE_PASSWORD_CHANGE.equals(tokenType)
+                || claims.getAudience() == null
+                || !claims.getAudience().contains(
+                jwtConfig.passwordChangeAudience()
+        )) {
+            throw new InvalidTokenException(
+                    "유효한 비밀번호 변경용 토큰이 아닙니다."
+            );
+        }
+
         return claims;
     }
 

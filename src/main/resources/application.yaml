@@ -49,7 +49,7 @@ spring:
   sql:
     init:
       data-locations: classpath*:dummy/*.sql
-      mode: always
+      mode: never
       platform: all
 
 # Springdoc Openapi
@@ -83,11 +83,13 @@ jwt:
   refresh-token-expiry: 1296000000
   refresh-token-cookie-name: refresh-token
   refresh-token-cookie-expiry: 1296000
+  password-change-token-expiry: 600000
   kid: ${JWT_KID}
   private-key-b64: ${JWT_PRIVATE_KEY_B64}
   public-key-b64: ${JWT_PUBLIC_KEY_B64}
   access-audience: lms-api
   refresh-audience: lms-auth
+  password-change-audience: lms-password-change
   header-key: Authorization
   scheme: Bearer
   reissue-uri: /api/auth/reissue-token
