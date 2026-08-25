@@ -17,6 +17,8 @@ public record JwtConfig(
         , String publicKeyB64
         , String accessAudience
         , String refreshAudience
+        , int passwordChangeTokenExpiry
+        , String passwordChangeAudience
         , String headerKey
         , String scheme
         , String reissueUri

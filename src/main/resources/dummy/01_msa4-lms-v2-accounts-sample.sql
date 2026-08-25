@@ -1,4 +1,4 @@
-DELETE FROM accounts;
+
 INSERT INTO accounts (
     id,
     login_id,

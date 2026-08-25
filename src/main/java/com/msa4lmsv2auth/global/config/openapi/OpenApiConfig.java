@@ -25,7 +25,8 @@ public class OpenApiConfig {
                         new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
-                                .bearerFormat("JWT")))
+                                .bearerFormat("JWT")
+                                .description("일반 API에는 Access Token을, 최초 비밀번호 변경 API에는 로그인 응답의 passwordChangeToken을 입력합니다.")))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_AUTH));
     }
 }
