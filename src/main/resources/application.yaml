@@ -5,6 +5,12 @@ spring:
   application:
     name: msa4-lms-v2-auth
     version: v1
+
+  # 요청 DTO에 정의되지 않은 필드는 조용히 무시하지 않고 400 오류로 처리한다.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
   web:
     error:
       include-stacktrace: always

@@ -3,6 +3,7 @@ package com.msa4lmsv2auth.domain.auth.service;
 import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.domain.account.repository.AccountRepository;
+import com.msa4lmsv2auth.domain.auth.request.InitialPasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
@@ -189,35 +190,13 @@ public class AuthService {
     }
 
     // 일반 로그인 후 변경
-   @Transactional(rollbackFor = Exception.class)
-   public void changePassword(long userId, PasswordChangeRequestDTO request) {
-        Account account = findAccount(userId);
-
-       changePasswordInternal(account, request);
-   }
-
-   // 최초 로그인 변경
-   @Transactional(rollbackFor = Exception.class)
-   public void changeInitialPassword(long userId, PasswordChangeRequestDTO request) {
-        Account account = findAccount(userId);
-
-        if(!account.isRequiresPasswordChange()) {
-            throw new BusinessException(
-                    CustomResponseCode.VALIDATION_ERROR,
-                    "최초 비밀번호 변경 대상 계정이 아닙니다."
-            );
-        }
-
-       changePasswordInternal(account, request);
-       account.setRequiresPasswordChange(false);
-
-   }
-
-   // 공통 비밀번호 변경
-    private void changePasswordInternal(
-            Account account,
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(
+            long userId,
             PasswordChangeRequestDTO request
     ) {
+        Account account = findAccount(userId);
+
         if (!passwordEncoder.matches(
                 request.currentPassword(),
                 account.getPassword()
@@ -228,20 +207,54 @@ public class AuthService {
             );
         }
 
-        if (passwordEncoder.matches(
-                request.newPassword(),
-                account.getPassword()
-        )) {
-            throw new BusinessException(
-                    CustomResponseCode.VALIDATION_ERROR,
-                    "새 비밀번호는 현재 비밀번호와 달라야 합니다."
-            );
-        }
-
-        account.setPassword(
-                passwordEncoder.encode(request.newPassword())
+        changePasswordInternal(
+                account,
+                request.newPassword()
         );
     }
+
+   // 최초 로그인 변경
+   @Transactional(rollbackFor = Exception.class)
+   public void changeInitialPassword(
+           long userId,
+           InitialPasswordChangeRequestDTO request
+   ) {
+       Account account = findAccount(userId);
+
+       if (!account.isRequiresPasswordChange()) {
+           throw new BusinessException(
+                   CustomResponseCode.VALIDATION_ERROR,
+                   "최초 비밀번호 변경 대상 계정이 아닙니다."
+           );
+       }
+
+       changePasswordInternal(
+               account,
+               request.newPassword()
+       );
+
+       account.setRequiresPasswordChange(false);
+   }
+
+   // 공통 비밀번호 변경
+   private void changePasswordInternal(
+           Account account,
+           String newPassword
+   ) {
+       if (passwordEncoder.matches(
+               newPassword,
+               account.getPassword()
+       )) {
+           throw new BusinessException(
+                   CustomResponseCode.VALIDATION_ERROR,
+                   "새 비밀번호는 기존 비밀번호와 달라야 합니다."
+           );
+       }
+
+       account.setPassword(
+               passwordEncoder.encode(newPassword)
+       );
+   }
 
 
     private Account findAccount(long userId) {

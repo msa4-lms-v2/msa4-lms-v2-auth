@@ -1,5 +1,6 @@
 package com.msa4lmsv2auth.domain.auth.controller;
 
+import com.msa4lmsv2auth.domain.auth.request.InitialPasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.LoginRequestDTO;
 import com.msa4lmsv2auth.domain.auth.request.PasswordChangeRequestDTO;
 import com.msa4lmsv2auth.domain.auth.response.AuthResponseDTO;
@@ -12,6 +13,7 @@ import com.msa4lmsv2auth.global.response.constant.CustomResponseCode;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -203,11 +205,10 @@ public class AuthController {
     // 최초 비밀번호 변경: Password Change Token 사용
     @Operation(
             summary = "최초 로그인 비밀번호 변경",
-            description = "최초 로그인 응답으로 발급된 비밀번호 변경 전용 토큰을 사용하여 임시 비밀번호를 새 비밀번호로 변경합니다. 일반 Access Token은 사용할 수 없습니다.",
+            description = "최초 로그인 응답으로 발급된 비밀번호 변경 전용 토큰을 사용합니다. 현재 비밀번호 입력 없이 새 비밀번호로 변경하며, 일반 Access Token은 사용할 수 없습니다.",
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @CustomApiResponse(value = {
-            CustomResponseCode.LOGIN_FAILED_ERROR,
             CustomResponseCode.INVALID_TOKEN_ERROR,
             CustomResponseCode.VALIDATION_ERROR,
             CustomResponseCode.DB_ERROR,
@@ -215,8 +216,9 @@ public class AuthController {
     })
     @PatchMapping("/initial-password")
     public ResponseEntity<GlobalResponseDTO<Void>> changeInitialPassword(
+            @Parameter(hidden = true)
             @RequestHeader("Authorization") String authorization,
-            @Valid @RequestBody PasswordChangeRequestDTO request
+            @Valid @RequestBody InitialPasswordChangeRequestDTO request
     ) {
         String token = resolveBearerToken(authorization);
 
