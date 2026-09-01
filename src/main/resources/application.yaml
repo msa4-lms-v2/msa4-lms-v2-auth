@@ -118,3 +118,18 @@ file:
 services:
   academic:
     url: ${GATEWAY_URI}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
