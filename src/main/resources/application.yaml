@@ -1,3 +1,135 @@
+server:
+  port: ${APP_PORT}
+
 spring:
   application:
     name: msa4-lms-v2-auth
+    version: v1
+
+  # 요청 DTO에 정의되지 않은 필드는 조용히 무시하지 않고 400 오류로 처리한다.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  web:
+    error:
+      include-stacktrace: always
+      include-message: always
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
+
+
+
+  # DB
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_TIMEOUT:2s}
+
+  # JPA
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100
+    defer-datasource-initialization: true
+  sql:
+    init:
+      data-locations: classpath*:dummy/*.sql
+      mode: never
+      platform: all
+
+# Springdoc Openapi
+springdoc:
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+  swagger-ui:
+    enabled: false
+  api-docs:
+    path: /api-docs
+  open-api:
+    servers:
+      - url: ${GATEWAY_URI}
+        description: ${APP_DESCRIPTION}
+
+# Log
+logging:
+  file:
+    name: logs/error.log
+  level:
+    root: info
+    com.msa4lmsv2auth.controllers: debug
+    com.msa4lmsv2auth.global.errors: debug
+
+# Security & JWT
+jwt:
+  secure: false
+  issuer: meerkat@meerkat.kr
+  type: JWT
+  access-token-expiry: 900000
+  refresh-token-expiry: 1296000000
+  refresh-token-cookie-name: refresh-token
+  refresh-token-cookie-expiry: 1296000
+  password-change-token-expiry: 600000
+  kid: ${JWT_KID}
+  private-key-b64: ${JWT_PRIVATE_KEY_B64}
+  public-key-b64: ${JWT_PUBLIC_KEY_B64}
+  access-audience: lms-api
+  refresh-audience: lms-auth
+  password-change-audience: lms-password-change
+  header-key: Authorization
+  scheme: Bearer
+  reissue-uri: /api/auth/reissue-token
+
+# file
+file:
+  server-uri: ${FILE_SERVER_URI}
+  storage-path: ${FILE_STORAGE_PATH}
+  profile-path: /files/profiles
+  allow-extension-list: [
+    "image/jpg",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/svg",
+    "image/webp"
+  ]
+
+# Service communication
+services:
+  academic:
+    url: ${GATEWAY_URI}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
