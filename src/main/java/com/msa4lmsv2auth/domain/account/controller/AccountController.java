@@ -53,7 +53,7 @@ public class AccountController {
                             schema = @Schema(implementation = StudentAccountCreateRequestDTO.class),
                             examples = @ExampleObject(
                                     name = "학생 계정 생성",
-                                    value = "{\"name\":\"홍길동\",\"email\":\"student@example.com\",\"phoneNumber\":\"010-1234-5678\",\"address\":\"서울특별시\",\"departmentId\":5,\"majorId\":1,\"admissionYear\":2026}"
+                                    value = "{\"name\":\"홍길동\",\"email\":\"student@example.com\",\"phoneNumber\":\"010-1234-5678\",\"address\":\"서울특별시\",\"departmentId\":5,\"admissionYear\":2026}"
                             )
                     )
             )

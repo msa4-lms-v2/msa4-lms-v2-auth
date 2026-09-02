@@ -7,7 +7,6 @@ public record StudentProvisioningRequestDTO(
         String phoneNumber,
         String address,
         Long departmentId,
-        Long majorId,
         Short admissionYear
 ) {
 }

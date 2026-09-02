@@ -19,8 +19,6 @@ public record StudentAccountCreateRequestDTO(
         @NotNull
         Long departmentId,
 
-        Long majorId,
-
         @NotNull
         Short admissionYear
 ) {

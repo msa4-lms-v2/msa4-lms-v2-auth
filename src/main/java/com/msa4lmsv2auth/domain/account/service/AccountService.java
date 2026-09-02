@@ -51,7 +51,6 @@ public class AccountService {
                         request.phoneNumber(),
                         request.address(),
                         request.departmentId(),
-                        request.majorId(),
                         request.admissionYear()
                 );
         // academic으로 전송해 학번 생성 후 auth로 데이터를 받음
