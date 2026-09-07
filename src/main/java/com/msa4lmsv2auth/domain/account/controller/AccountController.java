@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,7 +33,8 @@ public class AccountController {
 
     @Operation(
             summary = "학생 계정 생성",
-            description = "관리자가 학생 정보를 등록합니다. Academic에서 학번을 생성한 후 Auth 계정을 활성화합니다.",
+            description = "관리자가 학생 정보를 등록합니다. 계정은 PENDING_PROVISIONING으로 즉시 생성되고, "
+                    + "Auth Pod 내부 Outbox Worker가 비동기로 Academic에 학번을 요청해 성공하면 ACTIVE로 전환합니다.",
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @CustomApiResponse(value = {
@@ -59,12 +61,14 @@ public class AccountController {
             )
             @Valid @RequestBody StudentAccountCreateRequestDTO request
     ) {
-        return ResponseEntity.ok(GlobalResponseDTO.success(accountService.createStudent(request)));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GlobalResponseDTO.success(accountService.createStudent(request)));
     }
 
     @Operation(
             summary = "교수 계정 생성",
-            description = "관리자가 교수 정보를 등록합니다. Academic에서 교번을 생성한 후 Auth 계정을 활성화합니다.",
+            description = "관리자가 교수 정보를 등록합니다. 계정은 PENDING_PROVISIONING으로 즉시 생성되고, "
+                    + "Auth Pod 내부 Outbox Worker가 비동기로 Academic에 교번을 요청해 성공하면 ACTIVE로 전환합니다.",
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @CustomApiResponse(value = {
@@ -91,7 +95,8 @@ public class AccountController {
             )
             @Valid @RequestBody ProfessorAccountCreateRequestDTO request
     ) {
-        return ResponseEntity.ok(GlobalResponseDTO.success(accountService.createProfessor(request)));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GlobalResponseDTO.success(accountService.createProfessor(request)));
     }
 
 }

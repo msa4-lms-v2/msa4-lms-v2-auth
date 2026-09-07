@@ -1,35 +1,40 @@
 package com.msa4lmsv2auth.domain.account.service;
 
-import com.msa4lmsv2auth.domain.account.client.AcademicClient;
 import com.msa4lmsv2auth.domain.account.constant.AccountStatus;
 import com.msa4lmsv2auth.domain.account.entity.Account;
 import com.msa4lmsv2auth.domain.account.repository.AccountRepository;
 import com.msa4lmsv2auth.domain.account.request.ProfessorAccountCreateRequestDTO;
-import com.msa4lmsv2auth.domain.account.request.ProfessorProvisioningRequestDTO;
 import com.msa4lmsv2auth.domain.account.request.StudentAccountCreateRequestDTO;
-import com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO;
 import com.msa4lmsv2auth.domain.account.response.AccountResponseDTO;
-import com.msa4lmsv2auth.domain.account.response.ProfessorProvisioningResponseDTO;
-import com.msa4lmsv2auth.domain.account.response.StudentProvisioningResponseDTO;
+import com.msa4lmsv2auth.domain.outbox.constant.AccountSyncEventType;
+import com.msa4lmsv2auth.domain.outbox.service.AccountSyncOutboxService;
 import com.msa4lmsv2auth.global.security.constant.Role;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class AccountService {
     private static final String TEMPORARY_PASSWORD = "password123!";
 
+    private static final String AGGREGATE_TYPE_ACCOUNT = "ACCOUNT";
+    private static final long INITIAL_SOURCE_VERSION = 1L;
+
     private final PasswordEncoder passwordEncoder;
     private final AccountRepository accountRepository;
-    private final AcademicClient academicClient;
+    private final AccountSyncOutboxService accountSyncOutboxService;
 
     // 학생 계정 생성
+    // 계정 저장과 Outbox 이벤트 기록을 같은 트랜잭션에서 처리한다. Academic 호출은 이 자리에서 하지 않고
+    // Auth Pod 내부 Worker(AccountSyncOutboxBatchProcessor)가 비동기로 재시도하며 성공 후에만 ACTIVE로 전환한다.
+    @Transactional(rollbackFor = Exception.class)
     public AccountResponseDTO createStudent(
             StudentAccountCreateRequestDTO request
     ) {
-        // auth 계정 생성
         Account account = new Account();
         account.setLoginId(null);
         account.setPassword(
@@ -39,39 +44,24 @@ public class AccountService {
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
         account.setRequiresPasswordChange(true);
 
-        // auth DB 저장
-        Account saveAccount = accountRepository.save(account);
+        Account savedAccount = accountRepository.save(account);
 
-        // academic으로 학생 정보 전달
-        StudentProvisioningRequestDTO academicRequest =
-                new StudentProvisioningRequestDTO(
-                        saveAccount.getId(),
-                        request.name(),
-                        request.email(),
-                        request.phoneNumber(),
-                        request.address(),
-                        request.departmentId(),
-                        request.admissionYear()
-                );
-        // academic으로 전송해 학번 생성 후 auth로 데이터를 받음
-        StudentProvisioningResponseDTO academicResponse = academicClient.createStudent(academicRequest);
+        accountSyncOutboxService.record(
+                AGGREGATE_TYPE_ACCOUNT,
+                savedAccount.getId(),
+                AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
+                studentProvisioningPayload(savedAccount.getId(), request),
+                INITIAL_SOURCE_VERSION
+        );
 
-        // academic에서 받은 학번을 auth 계정에 반영
-        saveAccount.setLoginId(academicResponse.loginId());
-        saveAccount.setStatus(AccountStatus.ACTIVE);
-
-        Account completeAccount = accountRepository.save(saveAccount);
-
-        // 프론트 응답 형태로 반환
-        return AccountResponseDTO.from(completeAccount);
+        return AccountResponseDTO.from(savedAccount);
     }
 
-
     // 교수 계정 생성
+    @Transactional(rollbackFor = Exception.class)
     public AccountResponseDTO createProfessor(
             ProfessorAccountCreateRequestDTO request
     ) {
-        // auth 계정 생성
         Account account = new Account();
         account.setLoginId(null);
         account.setPassword(
@@ -81,30 +71,40 @@ public class AccountService {
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
         account.setRequiresPasswordChange(true);
 
-        // auth DB 저장
-        Account saveAccount = accountRepository.save(account);
+        Account savedAccount = accountRepository.save(account);
 
-        // academic으로 교수 정보 전달
-        ProfessorProvisioningRequestDTO academicRequest =
-                new ProfessorProvisioningRequestDTO(
-                        saveAccount.getId(),
-                        request.name(),
-                        request.email(),
-                        request.phoneNumber(),
-                        request.address(),
-                        request.departmentId(),
-                        request.hireYear()
-                );
-        // academic으로 전송해 학번 생성 후 auth로 데이터를 받음
-        ProfessorProvisioningResponseDTO academicResponse = academicClient.createProfessor(academicRequest);
+        accountSyncOutboxService.record(
+                AGGREGATE_TYPE_ACCOUNT,
+                savedAccount.getId(),
+                AccountSyncEventType.PROFESSOR_PROVISIONING_REQUESTED,
+                professorProvisioningPayload(savedAccount.getId(), request),
+                INITIAL_SOURCE_VERSION
+        );
 
-        // academic에서 받은 학번을 auth 계정에 반영
-        saveAccount.setLoginId(academicResponse.loginId());
-        saveAccount.setStatus(AccountStatus.ACTIVE);
+        return AccountResponseDTO.from(savedAccount);
+    }
 
-        Account completeAccount = accountRepository.save(saveAccount);
+    private Map<String, Object> studentProvisioningPayload(Long accountId, StudentAccountCreateRequestDTO request) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", accountId);
+        payload.put("name", request.name());
+        payload.put("email", request.email());
+        payload.put("phoneNumber", request.phoneNumber());
+        payload.put("address", request.address());
+        payload.put("departmentId", request.departmentId());
+        payload.put("admissionYear", request.admissionYear());
+        return payload;
+    }
 
-        // 프론트 응답 형태로 반환
-        return AccountResponseDTO.from(completeAccount);
+    private Map<String, Object> professorProvisioningPayload(Long accountId, ProfessorAccountCreateRequestDTO request) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", accountId);
+        payload.put("name", request.name());
+        payload.put("email", request.email());
+        payload.put("phoneNumber", request.phoneNumber());
+        payload.put("address", request.address());
+        payload.put("departmentId", request.departmentId());
+        payload.put("hireYear", request.hireYear());
+        return payload;
     }
 }

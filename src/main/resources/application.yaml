@@ -119,6 +119,12 @@ services:
   academic:
     url: ${GATEWAY_URI}
 
+# 계정 프로비저닝 Outbox Worker
+auth:
+  outbox:
+    poll-interval-ms: ${AUTH_OUTBOX_POLL_INTERVAL_MS:2000}
+    stale-after-hours: ${AUTH_OUTBOX_STALE_AFTER_HOURS:24}
+
 management:
   endpoints:
     web:
