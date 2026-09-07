@@ -103,4 +103,10 @@ public class Account {
         this.failedLoginAttempts = 0;
         this.lockedUntil = null;
     }
+
+    // Outbox Worker가 Academic 프로필 생성에 성공한 뒤 계정을 활성화한다.
+    public void activateWithLoginId(String loginId) {
+        this.loginId = loginId;
+        this.status = AccountStatus.ACTIVE;
+    }
 }

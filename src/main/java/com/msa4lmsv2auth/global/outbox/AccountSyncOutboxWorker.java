@@ -1,0 +1,63 @@
+package com.msa4lmsv2auth.global.outbox;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import java.time.Duration;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/**
+ * spring.threads.virtual.enabled=true 환경에서 Spring의 {@code @Scheduled}(SimpleAsyncTaskScheduler)가
+ * 배포 환경에서 아예 실행되지 않는 현상이 Academic Outbox Worker에서 이미 확인돼(로컬은 정상, 배포 pod는
+ * 몇 분간 단 한 번도 발행 시도가 없었음), 같은 클러스터에서 도는 Auth도 Spring 스케줄링 인프라를 거치지 않는
+ * 별도 ScheduledExecutorService로 직접 폴링한다.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class AccountSyncOutboxWorker {
+
+    private final AccountSyncOutboxBatchProcessor batchProcessor;
+
+    @Value("${auth.outbox.poll-interval-ms:2000}")
+    private long pollIntervalMs;
+
+    @Value("${auth.outbox.stale-after-hours:24}")
+    private long staleAfterHours;
+
+    private ScheduledExecutorService scheduler;
+
+    @PostConstruct
+    public void start() {
+        scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "auth-outbox-worker");
+            thread.setDaemon(true);
+            return thread;
+        });
+        scheduler.scheduleWithFixedDelay(this::poll, pollIntervalMs, pollIntervalMs, TimeUnit.MILLISECONDS);
+        log.info("AccountSyncOutboxWorker 폴링 시작 (interval={}ms, staleAfter={}h)", pollIntervalMs, staleAfterHours);
+    }
+
+    @PreDestroy
+    public void stop() {
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+        }
+    }
+
+    // ScheduledExecutorService도 Runnable에서 예외가 새어나가면 이후 스케줄이 조용히 멈추므로
+    // (ScheduledExecutorService 계약) 반드시 이 메서드 안에서 모든 예외를 잡는다.
+    private void poll() {
+        try {
+            batchProcessor.expireStaleEntries(Duration.ofHours(staleAfterHours));
+            batchProcessor.publishPendingBatch();
+        } catch (Exception exception) {
+            log.error("계정 프로비저닝 outbox 폴링 중 예상치 못한 예외 발생", exception);
+        }
+    }
+}
