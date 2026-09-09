@@ -9,6 +9,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface AccountSyncOutboxRepository extends JpaRepository<AccountSyncOutbox, Long> {
 
+    java.util.Optional<AccountSyncOutbox> findFirstByAggregateIdOrderByIdDesc(Long aggregateId);
+
+    @Query(value = "SELECT * FROM account_sync_outbox "
+            + "WHERE event_type = 'StudentProvisioningRequested' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.admissionCandidateId')) = CAST(:candidateId AS CHAR) "
+            + "ORDER BY id DESC LIMIT 1",
+            nativeQuery = true)
+    java.util.Optional<AccountSyncOutbox> findAdmissionProvisioningEvent(@Param("candidateId") Long candidateId);
+
     @Query(value = "SELECT * FROM account_sync_outbox "
             + "WHERE status = 'PENDING' AND next_attempt_at <= :now "
             + "ORDER BY id ASC LIMIT :batchSize FOR UPDATE SKIP LOCKED",

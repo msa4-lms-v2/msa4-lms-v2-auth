@@ -31,6 +31,28 @@ public class AccountController {
 
     private final AccountService accountService;
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @org.springframework.web.bind.annotation.GetMapping("/{accountId}")
+    public ResponseEntity<GlobalResponseDTO<com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO>> getAccount(
+            @org.springframework.web.bind.annotation.PathVariable Long accountId) {
+        return ResponseEntity.ok(GlobalResponseDTO.success(accountService.getAccount(accountId)));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @org.springframework.web.bind.annotation.GetMapping("/admission-candidates/{candidateId}")
+    public ResponseEntity<GlobalResponseDTO<com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO>> getAdmissionAccount(
+            @org.springframework.web.bind.annotation.PathVariable Long candidateId) {
+        return ResponseEntity.ok(GlobalResponseDTO.success(accountService.getAdmissionAccount(candidateId)));
+    }
+
+    @Operation(summary = "입학 예정자 계정 생성", description = "Academic 등록 이벤트가 호출하며 예정자 ID로 중복 생성을 방지합니다.")
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/admission-candidates")
+    public ResponseEntity<GlobalResponseDTO<AccountResponseDTO>> createAdmissionAccount(
+            @Valid @RequestBody com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(GlobalResponseDTO.success(accountService.createAdmission(request)));
+    }
+
     @Operation(
             summary = "학생 계정 생성",
             description = "관리자가 학생 정보를 등록합니다. 계정은 PENDING_PROVISIONING으로 즉시 생성되고, "
