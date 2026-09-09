@@ -15,6 +15,8 @@ import com.msa4lmsv2auth.domain.account.request.ProfessorAccountCreateRequestDTO
 import com.msa4lmsv2auth.domain.account.request.StudentAccountCreateRequestDTO;
 import com.msa4lmsv2auth.domain.account.response.AccountResponseDTO;
 import com.msa4lmsv2auth.domain.outbox.constant.AccountSyncEventType;
+import com.msa4lmsv2auth.domain.outbox.entity.AccountSyncOutbox;
+import com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository;
 import com.msa4lmsv2auth.domain.outbox.service.AccountSyncOutboxService;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import java.util.Map;
@@ -38,8 +40,37 @@ class AccountServiceTest {
     @Mock
     private AccountSyncOutboxService accountSyncOutboxService;
 
+    @Mock
+    private AccountSyncOutboxRepository accountSyncOutboxRepository;
+
     @InjectMocks
     private AccountService accountService;
+
+    @Test
+    void admissionRegistrationCreatesOnlyOneAccountAndCarriesCandidateId() {
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                7L, "김학생", "student@example.com", null, null, 5L, 10L, (short) 2026);
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
+        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> {
+            Account account = invocation.getArgument(0);
+            account.setId(23L);
+            return account;
+        });
+        var response = accountService.createAdmission(request);
+        assertThat(response.status()).isEqualTo(AccountStatus.PENDING_PROVISIONING);
+        ArgumentCaptor<Account> accountCaptor = ArgumentCaptor.forClass(Account.class);
+        verify(accountRepository).save(accountCaptor.capture());
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(accountSyncOutboxService).record(eq("ACCOUNT"), eq(23L), eq(AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED), payload.capture(), eq(1L));
+        assertThat(payload.getValue()).containsEntry("admissionCandidateId", 7L);
+        assertThat(payload.getValue()).containsEntry("advisorProfessorId", 10L);
+        AccountSyncOutbox event = AccountSyncOutbox.create("ACCOUNT", 23L,
+                AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED, Map.of("admissionCandidateId", 7L), 1L);
+        when(accountSyncOutboxRepository.findAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
+        when(accountRepository.findById(23L)).thenReturn(java.util.Optional.of(accountCaptor.getValue()));
+        assertThat(accountService.createAdmission(request).id()).isEqualTo(23L);
+        verify(accountRepository, org.mockito.Mockito.times(1)).save(any());
+    }
 
     @Test
     void should_createPendingAccountAndRecordOutboxEvent_when_studentAccountIsCreated() {
