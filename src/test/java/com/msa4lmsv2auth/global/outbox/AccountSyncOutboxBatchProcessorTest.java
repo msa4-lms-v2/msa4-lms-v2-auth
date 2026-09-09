@@ -46,6 +46,7 @@ class AccountSyncOutboxBatchProcessorTest {
     @Test
     void should_activateAccountAndCompleteEvent_when_academicProvisioningSucceeds() {
         AccountSyncOutbox event = studentEvent(1L);
+        event.getPayload().put("admissionCandidateId", 7L);
         Account account = pendingAccount(1L);
 
         when(accountSyncOutboxRepository.lockNextBatch(any(), anyInt())).thenReturn(List.of(event));
@@ -54,6 +55,9 @@ class AccountSyncOutboxBatchProcessorTest {
 
         batchProcessor.publishPendingBatch();
 
+        org.mockito.ArgumentCaptor<com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO> captor = org.mockito.ArgumentCaptor.forClass(com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO.class);
+        org.mockito.Mockito.verify(academicClient).createStudent(captor.capture());
+        assertThat(captor.getValue().admissionCandidateId()).isEqualTo(7L);
         assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(account.getLoginId()).isEqualTo("26001001");
         assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.COMPLETED);

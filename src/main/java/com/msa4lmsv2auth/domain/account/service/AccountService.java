@@ -27,6 +27,7 @@ public class AccountService {
     private final PasswordEncoder passwordEncoder;
     private final AccountRepository accountRepository;
     private final AccountSyncOutboxService accountSyncOutboxService;
+    private final com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository accountSyncOutboxRepository;
 
     // 학생 계정 생성
     // 계정 저장과 Outbox 이벤트 기록을 같은 트랜잭션에서 처리한다. Academic 호출은 이 자리에서 하지 않고
@@ -82,6 +83,50 @@ public class AccountService {
         );
 
         return AccountResponseDTO.from(savedAccount);
+    }
+
+    @Transactional
+    public AccountResponseDTO createAdmission(
+            com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
+        Account existing = findAdmissionAccount(request.admissionCandidateId());
+        if (existing != null) return AccountResponseDTO.from(existing);
+        Account account = new Account();
+        account.setPassword(passwordEncoder.encode(TEMPORARY_PASSWORD));
+        account.setRole(Role.STUDENT);
+        account.setStatus(AccountStatus.PENDING_PROVISIONING);
+        account.setRequiresPasswordChange(true);
+        Account saved = accountRepository.save(account);
+        Map<String, Object> payload = studentProvisioningPayload(saved.getId(), new StudentAccountCreateRequestDTO(
+                request.name(), request.email(), request.phoneNumber(), request.address(), request.departmentId(), request.admissionYear()));
+        payload.put("admissionCandidateId", request.admissionCandidateId());
+        payload.put("advisorProfessorId", request.advisorProfessorId());
+        accountSyncOutboxService.record(AGGREGATE_TYPE_ACCOUNT, saved.getId(),
+                AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED, payload, INITIAL_SOURCE_VERSION);
+        return AccountResponseDTO.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO getAccount(Long id) {
+        return registrationStatus(accountRepository.findById(id).orElseThrow(() ->
+                new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND)));
+    }
+
+    @Transactional(readOnly = true)
+    public com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO getAdmissionAccount(Long candidateId) {
+        Account account = findAdmissionAccount(candidateId);
+        return account == null ? null : registrationStatus(account);
+    }
+
+    private Account findAdmissionAccount(Long candidateId) {
+        return accountSyncOutboxRepository.findAdmissionProvisioningEvent(candidateId)
+                .flatMap(event -> accountRepository.findById(event.getAggregateId()))
+                .orElse(null);
+    }
+
+    private com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO registrationStatus(Account account) {
+        String state = accountSyncOutboxRepository.findFirstByAggregateIdOrderByIdDesc(account.getId())
+                .map(event -> event.getStatus().name()).orElse(null);
+        return com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO.from(account, state);
     }
 
     private Map<String, Object> studentProvisioningPayload(Long accountId, StudentAccountCreateRequestDTO request) {

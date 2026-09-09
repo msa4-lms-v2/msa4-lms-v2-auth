@@ -7,6 +7,12 @@ public record StudentProvisioningRequestDTO(
         String phoneNumber,
         String address,
         Long departmentId,
-        Short admissionYear
+        Short admissionYear,
+        Long admissionCandidateId,
+        Long advisorProfessorId
 ) {
+    public StudentProvisioningRequestDTO(Long userId, String name, String email, String phoneNumber,
+                                         String address, Long departmentId, Short admissionYear) {
+        this(userId, name, email, phoneNumber, address, departmentId, admissionYear, null, null);
+    }
 }

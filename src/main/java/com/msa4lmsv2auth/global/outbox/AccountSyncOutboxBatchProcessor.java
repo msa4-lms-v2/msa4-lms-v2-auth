@@ -104,7 +104,8 @@ public class AccountSyncOutboxBatchProcessor {
                 StudentProvisioningResponseDTO response = academicClient.createStudent(
                         new StudentProvisioningRequestDTO(
                                 userId, name, email, phoneNumber, address,
-                                departmentId, asShort(payload.get("admissionYear"))
+                                departmentId, asShort(payload.get("admissionYear")), asLong(payload.get("admissionCandidateId")),
+                                asLong(payload.get("advisorProfessorId"))
                         )
                 );
                 yield response.loginId();
