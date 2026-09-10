@@ -31,6 +31,49 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
 
+    @Test
+    void retryResumesExistingAccountWithoutCreatingAnother() {
+        var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
+                Map.of("admissionCandidateId", 7L), 1L);
+        event.giveUp("ACADEMIC_REJECTED");
+        var account = new Account();
+        account.setId(23L);
+        when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
+        when(accountRepository.findById(23L)).thenReturn(java.util.Optional.of(account));
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                7L, "학생", "s@example.com", null, null, 1L, 2L, (short) 2026);
+        assertThat(accountService.retryAdmission(request).id()).isEqualTo(23L);
+        assertThat(event.getStatus().name()).isEqualTo("PENDING");
+        assertThat(event.getPayload()).containsKey("_retryStartedAt");
+        verify(accountRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void cancelDisablesPendingAccountAndStopsRetry() {
+        var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
+                Map.of("admissionCandidateId", 7L), 1L);
+        var account = new Account();
+        when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
+        when(accountRepository.findById(23L)).thenReturn(java.util.Optional.of(account));
+        accountService.cancelAdmission(7L);
+        accountService.cancelAdmission(7L);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.INACTIVE);
+        assertThat(event.getStatus().name()).isEqualTo("MANUAL_REVIEW_REQUIRED");
+        assertThat(event.getLastErrorCode()).isEqualTo("CANCELLED_BY_ADMIN");
+    }
+
+    @Test
+    void cancelRejectsAnAlreadyActiveAccount() {
+        var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED, Map.of(), 1L);
+        var account = new Account();
+        account.setStatus(AccountStatus.ACTIVE);
+        when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
+        when(accountRepository.findById(23L)).thenReturn(java.util.Optional.of(account));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> accountService.cancelAdmission(7L))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
     @Mock
     private PasswordEncoder passwordEncoder;
 

@@ -9,6 +9,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface AccountSyncOutboxRepository extends JpaRepository<AccountSyncOutbox, Long> {
 
+    @Query(value = "SELECT * FROM account_sync_outbox WHERE event_type = 'StudentProvisioningRequested' "
+            + "AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.admissionCandidateId')) = CAST(:candidateId AS CHAR) "
+            + "ORDER BY id DESC LIMIT 1 FOR UPDATE", nativeQuery = true)
+    java.util.Optional<AccountSyncOutbox> lockAdmissionProvisioningEvent(@Param("candidateId") Long candidateId);
+
     java.util.Optional<AccountSyncOutbox> findFirstByAggregateIdOrderByIdDesc(Long aggregateId);
 
     @Query(value = "SELECT * FROM account_sync_outbox "
@@ -26,7 +31,8 @@ public interface AccountSyncOutboxRepository extends JpaRepository<AccountSyncOu
 
     // 24시간 넘게 완료되지 못한 채 남아있는 행을 골라 수동 검토 대상으로 종결한다.
     @Query(value = "SELECT * FROM account_sync_outbox "
-            + "WHERE status IN ('PENDING', 'PROCESSING') AND created_at <= :staleBefore "
+            + "WHERE status IN ('PENDING', 'PROCESSING') "
+            + "AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, '$._retryStartedAt')), created_at) <= :staleBefore "
             + "ORDER BY id ASC LIMIT :batchSize FOR UPDATE SKIP LOCKED",
             nativeQuery = true)
     List<AccountSyncOutbox> lockStaleBatch(@Param("staleBefore") LocalDateTime staleBefore, @Param("batchSize") int batchSize);
