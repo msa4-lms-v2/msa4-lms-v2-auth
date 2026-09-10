@@ -32,6 +32,20 @@ public class AccountController {
     private final AccountService accountService;
 
     @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/admission-candidates/retry")
+    public ResponseEntity<GlobalResponseDTO<AccountResponseDTO>> retryAdmission(
+            @Valid @RequestBody com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
+        return ResponseEntity.ok(GlobalResponseDTO.success(accountService.retryAdmission(request)));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/admission-candidates/{candidateId}/cancel")
+    public ResponseEntity<Void> cancelAdmission(@org.springframework.web.bind.annotation.PathVariable Long candidateId) {
+        accountService.cancelAdmission(candidateId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
     @org.springframework.web.bind.annotation.GetMapping("/{accountId}")
     public ResponseEntity<GlobalResponseDTO<com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO>> getAccount(
             @org.springframework.web.bind.annotation.PathVariable Long accountId) {

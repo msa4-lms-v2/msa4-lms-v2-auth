@@ -128,6 +128,10 @@ public class AccountSyncOutbox {
     // 운영자가 원인을 해결한 뒤 수동으로 재실행할 때 사용한다.
     public void resetForRetry(LocalDateTime now) {
         this.status = AccountSyncOutboxStatus.PENDING;
+        this.attempts = 0;
+        this.lastErrorCode = "ADMIN_RETRY";
+        this.payload = new java.util.LinkedHashMap<>(payload);
+        this.payload.put("_retryStartedAt", now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         this.nextAttemptAt = now;
         this.lockedBy = null;
         this.lockedUntil = null;

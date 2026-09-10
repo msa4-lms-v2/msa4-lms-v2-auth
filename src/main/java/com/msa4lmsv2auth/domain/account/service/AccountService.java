@@ -111,6 +111,35 @@ public class AccountService {
                 new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND)));
     }
 
+    @Transactional
+    public AccountResponseDTO retryAdmission(
+            com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
+        var event = accountSyncOutboxRepository.lockAdmissionProvisioningEvent(request.admissionCandidateId()).orElse(null);
+        if (event == null) return createAdmission(request);
+        var account = accountRepository.findById(event.getAggregateId()).orElseThrow();
+        if (account.getStatus() == AccountStatus.ACTIVE) return AccountResponseDTO.from(account);
+        if (account.getStatus() != AccountStatus.PENDING_PROVISIONING) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "취소되었거나 계정 생성 중이 아닌 계정입니다.");
+        }
+        event.resetForRetry(java.time.LocalDateTime.now());
+        return AccountResponseDTO.from(account);
+    }
+
+    @Transactional
+    public void cancelAdmission(Long candidateId) {
+        var event = accountSyncOutboxRepository.lockAdmissionProvisioningEvent(candidateId).orElse(null);
+        if (event == null) return;
+        var account = accountRepository.findById(event.getAggregateId()).orElseThrow();
+        if ("CANCELLED_BY_ADMIN".equals(event.getLastErrorCode())) return;
+        if (account.getStatus() != AccountStatus.PENDING_PROVISIONING) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "생성 완료된 계정은 취소할 수 없습니다.");
+        }
+        event.giveUp("CANCELLED_BY_ADMIN");
+        account.setStatus(AccountStatus.INACTIVE);
+    }
+
     @Transactional(readOnly = true)
     public com.msa4lmsv2auth.domain.account.response.AccountRegistrationResponseDTO getAdmissionAccount(Long candidateId) {
         Account account = findAdmissionAccount(candidateId);
