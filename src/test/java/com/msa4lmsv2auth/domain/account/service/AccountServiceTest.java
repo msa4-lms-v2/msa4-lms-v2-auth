@@ -33,6 +33,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AccountServiceTest {
 
     @Test
+    void unpaidAdmissionCannotCreateAuthAccount() {
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                7L, "김학생", LocalDate.of(2005, 2, 22), "student@example.com", null, null, 5L, 10L, (short) 2026);
+        org.mockito.Mockito.doThrow(new IllegalStateException("미납")).when(admissionClient).requirePaid(7L);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> accountService.createAdmission(request))
+                .isInstanceOf(IllegalStateException.class);
+        org.mockito.Mockito.verifyNoInteractions(accountRepository, accountSyncOutboxService, passwordEncoder);
+    }
+
+    @Test
     void retryResumesExistingAccountWithoutCreatingAnother() {
         var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
                 Map.of("admissionCandidateId", 7L), 1L);
@@ -86,6 +96,8 @@ class AccountServiceTest {
 
     @Mock
     private AccountSyncOutboxRepository accountSyncOutboxRepository;
+
+    @Mock private com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
 
     @InjectMocks
     private AccountService accountService;

@@ -33,6 +33,9 @@ public class Account {
     @Column(name = "login_id", unique = true, length = 150)
     private String loginId;
 
+    @Column(name = "admission_candidate_id", unique = true)
+    private Long admissionCandidateId;
+
     @Column(name = "password", nullable = false, length = 255)
     private String password;
 
