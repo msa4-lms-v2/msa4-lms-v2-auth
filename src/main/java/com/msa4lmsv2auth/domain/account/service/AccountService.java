@@ -11,6 +11,8 @@ import com.msa4lmsv2auth.domain.outbox.service.AccountSyncOutboxService;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class AccountService {
-    private static final String TEMPORARY_PASSWORD = "password123!";
+    private static final DateTimeFormatter INITIAL_PASSWORD_FORMAT = DateTimeFormatter.ofPattern("yyMMdd");
 
     private static final String AGGREGATE_TYPE_ACCOUNT = "ACCOUNT";
     private static final long INITIAL_SOURCE_VERSION = 1L;
@@ -38,8 +40,9 @@ public class AccountService {
     ) {
         Account account = new Account();
         account.setLoginId(null);
+        account.setBirthDate(request.birthDate());
         account.setPassword(
-                passwordEncoder.encode(TEMPORARY_PASSWORD)
+                passwordEncoder.encode(initialPassword(request.birthDate()))
         );
         account.setRole(Role.STUDENT);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
@@ -65,8 +68,9 @@ public class AccountService {
     ) {
         Account account = new Account();
         account.setLoginId(null);
+        account.setBirthDate(request.birthDate());
         account.setPassword(
-                passwordEncoder.encode(TEMPORARY_PASSWORD)
+                passwordEncoder.encode(initialPassword(request.birthDate()))
         );
         account.setRole(Role.PROFESSOR);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
@@ -91,13 +95,15 @@ public class AccountService {
         Account existing = findAdmissionAccount(request.admissionCandidateId());
         if (existing != null) return AccountResponseDTO.from(existing);
         Account account = new Account();
-        account.setPassword(passwordEncoder.encode(TEMPORARY_PASSWORD));
+        account.setBirthDate(request.birthDate());
+        account.setPassword(passwordEncoder.encode(initialPassword(request.birthDate())));
         account.setRole(Role.STUDENT);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
         account.setRequiresPasswordChange(true);
         Account saved = accountRepository.save(account);
         Map<String, Object> payload = studentProvisioningPayload(saved.getId(), new StudentAccountCreateRequestDTO(
-                request.name(), request.email(), request.phoneNumber(), request.address(), request.departmentId(), request.admissionYear()));
+                request.name(), request.birthDate(), request.email(), request.phoneNumber(), request.address(),
+                request.departmentId(), request.admissionYear()));
         payload.put("admissionCandidateId", request.admissionCandidateId());
         payload.put("advisorProfessorId", request.advisorProfessorId());
         accountSyncOutboxService.record(AGGREGATE_TYPE_ACCOUNT, saved.getId(),
@@ -162,6 +168,7 @@ public class AccountService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", accountId);
         payload.put("name", request.name());
+        payload.put("birthDate", request.birthDate().toString());
         payload.put("email", request.email());
         payload.put("phoneNumber", request.phoneNumber());
         payload.put("address", request.address());
@@ -174,11 +181,19 @@ public class AccountService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", accountId);
         payload.put("name", request.name());
+        payload.put("birthDate", request.birthDate().toString());
         payload.put("email", request.email());
         payload.put("phoneNumber", request.phoneNumber());
         payload.put("address", request.address());
         payload.put("departmentId", request.departmentId());
         payload.put("hireYear", request.hireYear());
         return payload;
+    }
+
+    private String initialPassword(LocalDate birthDate) {
+        if (birthDate == null) {
+            throw new IllegalArgumentException("생년월일은 필수입니다.");
+        }
+        return birthDate.format(INITIAL_PASSWORD_FORMAT);
     }
 }

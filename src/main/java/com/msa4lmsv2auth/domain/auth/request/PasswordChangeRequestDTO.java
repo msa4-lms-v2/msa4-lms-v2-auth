@@ -12,8 +12,8 @@ public record PasswordChangeRequestDTO(
 
         @Schema(description = "변경할 새 비밀번호(8~20자)", example = "NewPassword123!")
         @NotBlank(message = "새 비밀번호는 필수입니다.")
-        @Pattern(regexp = "^[0-9a-zA-Z!@#$%^&*()]{8,20}$"
-                , message = "허용하지 않는 양식입니다."
+        @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[!@#$%^&*()])[A-Za-z\\d!@#$%^&*()]{8,20}$"
+                , message = "비밀번호는 영문, 숫자, 특수문자를 포함한 8~20자여야 합니다."
         )
         String newPassword
 ) {

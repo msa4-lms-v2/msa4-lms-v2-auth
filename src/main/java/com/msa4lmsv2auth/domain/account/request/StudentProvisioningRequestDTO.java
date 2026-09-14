@@ -1,8 +1,12 @@
 package com.msa4lmsv2auth.domain.account.request;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import java.time.LocalDate;
+
 public record StudentProvisioningRequestDTO(
         Long userId,       // Auth에서 추가되는 값
         String name,
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd") LocalDate birthDate,
         String email,
         String phoneNumber,
         String address,
@@ -13,6 +17,6 @@ public record StudentProvisioningRequestDTO(
 ) {
     public StudentProvisioningRequestDTO(Long userId, String name, String email, String phoneNumber,
                                          String address, Long departmentId, Short admissionYear) {
-        this(userId, name, email, phoneNumber, address, departmentId, admissionYear, null, null);
+        this(userId, name, null, email, phoneNumber, address, departmentId, admissionYear, null, null);
     }
 }
