@@ -95,7 +95,26 @@ public class AccountService {
             com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
         admissionClient.requirePaid(request.admissionCandidateId());
         Account existing = findAdmissionAccount(request.admissionCandidateId());
-        if (existing != null) return AccountResponseDTO.from(existing);
+        if (existing != null) {
+            if (existing.getStatus() == AccountStatus.PENDING_PROVISIONING) {
+                var event = accountSyncOutboxRepository.lockAdmissionProvisioningEvent(request.admissionCandidateId()).orElse(null);
+                if (event != null && event.isAwaitingAdmissionPaymentMigration()) {
+                    if (event.getAggregateId() != existing.getId()) {
+                        throw new IllegalStateException("입학 계정과 생성 요청이 일치하지 않습니다.");
+                    }
+                    Map<String, Object> payload = studentProvisioningPayload(existing.getId(), new StudentAccountCreateRequestDTO(
+                            request.name(), request.birthDate(), request.email(), request.phoneNumber(), request.address(),
+                            request.departmentId(), request.admissionYear()));
+                    payload.put("admissionCandidateId", request.admissionCandidateId());
+                    payload.put("advisorProfessorId", request.advisorProfessorId());
+                    event.resumeMigratedAdmission(payload, java.time.LocalDateTime.now());
+                    existing.setAdmissionCandidateId(request.admissionCandidateId());
+                    existing.setBirthDate(request.birthDate());
+                    existing.setPassword(passwordEncoder.encode(initialPassword(request.birthDate())));
+                }
+            }
+            return AccountResponseDTO.from(existing);
+        }
         Account account = new Account();
         account.setBirthDate(request.birthDate());
         account.setPassword(passwordEncoder.encode(initialPassword(request.birthDate())));

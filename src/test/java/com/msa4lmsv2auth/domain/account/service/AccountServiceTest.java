@@ -165,6 +165,28 @@ class AccountServiceTest {
     }
 
     @Test
+    void migratedPendingAccountResumesSameEventWithPaidCanonicalDetails() {
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                18L, "입학 학생", LocalDate.of(2006, 3, 4), "migration@example.invalid", null, null, 5L, 10L, (short)2027);
+        Account account = new Account(); account.setId(23L); account.setStatus(AccountStatus.PENDING_PROVISIONING);
+        var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
+                Map.of("admissionCandidateId", 18L, "departmentId", 1L), 1L);
+        event.giveUp("MIGRATED_TO_PAYMENT_GATED_ADMISSION");
+        when(accountRepository.findByAdmissionCandidateId(18L)).thenReturn(java.util.Optional.of(account));
+        when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(18L)).thenReturn(java.util.Optional.of(event));
+        when(passwordEncoder.encode(anyString())).thenReturn("updated-initial-password");
+        assertThat(accountService.createAdmission(request).id()).isEqualTo(23L);
+        assertThat(event.getPayload()).containsEntry("advisorProfessorId",10L).containsEntry("departmentId",5L).containsEntry("birthDate","2006-03-04");
+        assertThat(event.getStatus().name()).isEqualTo("PENDING");
+        assertThat(account.getBirthDate()).isEqualTo(request.birthDate());
+        verify(admissionClient).requirePaid(18L);
+        verify(accountRepository, org.mockito.Mockito.never()).save(any());
+        verify(accountSyncOutboxService, org.mockito.Mockito.never()).record(any(),any(),any(),any(),any());
+        accountService.createAdmission(request);
+        verify(passwordEncoder, org.mockito.Mockito.times(1)).encode(anyString());
+    }
+
+    @Test
     void should_createPendingAccountAndRecordOutboxEvent_when_professorAccountIsCreated() {
         ProfessorAccountCreateRequestDTO request = new ProfessorAccountCreateRequestDTO(
                 "김교수", LocalDate.of(1980, 11, 3), "professor@example.com", "010-9876-5432", "서울특별시", 5L, (short) 2026
