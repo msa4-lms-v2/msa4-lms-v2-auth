@@ -41,6 +41,8 @@ class AccountSyncOutboxBatchProcessorTest {
     @Mock
     private AcademicClient academicClient;
 
+    @Mock private com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
+
     @InjectMocks
     private AccountSyncOutboxBatchProcessor batchProcessor;
 
@@ -53,12 +55,12 @@ class AccountSyncOutboxBatchProcessorTest {
 
         when(accountSyncOutboxRepository.lockNextBatch(any(), anyInt())).thenReturn(List.of(event));
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
-        when(academicClient.createStudent(any())).thenReturn(new StudentProvisioningResponseDTO(1L, "26001001"));
+        when(admissionClient.provision(any())).thenReturn(new StudentProvisioningResponseDTO(1L, "26001001"));
 
         batchProcessor.publishPendingBatch();
 
         org.mockito.ArgumentCaptor<com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO> captor = org.mockito.ArgumentCaptor.forClass(com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO.class);
-        org.mockito.Mockito.verify(academicClient).createStudent(captor.capture());
+        org.mockito.Mockito.verify(admissionClient).provision(captor.capture());
         assertThat(captor.getValue().admissionCandidateId()).isEqualTo(7L);
         assertThat(captor.getValue().birthDate()).isEqualTo(LocalDate.of(2005, 2, 22));
         assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
@@ -80,6 +82,26 @@ class AccountSyncOutboxBatchProcessorTest {
         assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.PENDING);
         assertThat(event.getAttempts()).isEqualTo(1);
         assertThat(account.getStatus()).isEqualTo(AccountStatus.PENDING_PROVISIONING);
+    }
+
+    @Test
+    void activationNotificationRetriesWithoutCreatingOrDisablingStudent() {
+        AccountSyncOutbox event = AccountSyncOutbox.create("ACCOUNT", 1L,
+                "AdmissionAccountActivated", Map.of("admissionCandidateId", 7L), 1L);
+        Account account = pendingAccount(1L);
+        account.activateWithLoginId("26001001");
+        when(accountSyncOutboxRepository.lockNextBatch(any(), anyInt())).thenReturn(List.of(event));
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+        org.mockito.Mockito.doThrow(new ResourceAccessException("timeout"))
+                .doNothing().when(admissionClient).activated(7L, 1L);
+
+        batchProcessor.publishPendingBatch();
+        assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.PENDING);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        batchProcessor.publishPendingBatch();
+        assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.COMPLETED);
+        org.mockito.Mockito.verify(admissionClient, org.mockito.Mockito.never()).provision(any());
+        org.mockito.Mockito.verifyNoInteractions(academicClient);
     }
 
     @Test

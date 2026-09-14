@@ -33,6 +33,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AccountServiceTest {
 
     @Test
+    void unpaidAdmissionCannotCreateAuthAccount() {
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                7L, "김학생", LocalDate.of(2005, 2, 22), "student@example.com", null, null, 5L, 10L, (short) 2026);
+        org.mockito.Mockito.doThrow(new IllegalStateException("미납")).when(admissionClient).requirePaid(7L);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> accountService.createAdmission(request))
+                .isInstanceOf(IllegalStateException.class);
+        org.mockito.Mockito.verifyNoInteractions(accountRepository, accountSyncOutboxService, passwordEncoder);
+    }
+
+    @Test
     void retryResumesExistingAccountWithoutCreatingAnother() {
         var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
                 Map.of("admissionCandidateId", 7L), 1L);
@@ -86,6 +96,8 @@ class AccountServiceTest {
 
     @Mock
     private AccountSyncOutboxRepository accountSyncOutboxRepository;
+
+    @Mock private com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
 
     @InjectMocks
     private AccountService accountService;
@@ -150,6 +162,28 @@ class AccountServiceTest {
                 .containsEntry("email", "student@example.com")
                 .containsEntry("departmentId", 5L)
                 .containsEntry("admissionYear", (short) 2026);
+    }
+
+    @Test
+    void migratedPendingAccountResumesSameEventWithPaidCanonicalDetails() {
+        var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
+                18L, "입학 학생", LocalDate.of(2006, 3, 4), "migration@example.invalid", null, null, 5L, 10L, (short)2027);
+        Account account = new Account(); account.setId(23L); account.setStatus(AccountStatus.PENDING_PROVISIONING);
+        var event = AccountSyncOutbox.create("ACCOUNT", 23L, AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED,
+                Map.of("admissionCandidateId", 18L, "departmentId", 1L), 1L);
+        event.giveUp("MIGRATED_TO_PAYMENT_GATED_ADMISSION");
+        when(accountRepository.findByAdmissionCandidateId(18L)).thenReturn(java.util.Optional.of(account));
+        when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(18L)).thenReturn(java.util.Optional.of(event));
+        when(passwordEncoder.encode(anyString())).thenReturn("updated-initial-password");
+        assertThat(accountService.createAdmission(request).id()).isEqualTo(23L);
+        assertThat(event.getPayload()).containsEntry("advisorProfessorId",10L).containsEntry("departmentId",5L).containsEntry("birthDate","2006-03-04");
+        assertThat(event.getStatus().name()).isEqualTo("PENDING");
+        assertThat(account.getBirthDate()).isEqualTo(request.birthDate());
+        verify(admissionClient).requirePaid(18L);
+        verify(accountRepository, org.mockito.Mockito.never()).save(any());
+        verify(accountSyncOutboxService, org.mockito.Mockito.never()).record(any(),any(),any(),any(),any());
+        accountService.createAdmission(request);
+        verify(passwordEncoder, org.mockito.Mockito.times(1)).encode(anyString());
     }
 
     @Test

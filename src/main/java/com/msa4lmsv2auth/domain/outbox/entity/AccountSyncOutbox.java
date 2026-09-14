@@ -125,6 +125,20 @@ public class AccountSyncOutbox {
         this.lockedUntil = null;
     }
 
+    // 상태 전환으로 보류한 기존 입학 요청만 완납 후 재개한다.
+    public boolean isAwaitingAdmissionPaymentMigration() {
+        return status == AccountSyncOutboxStatus.MANUAL_REVIEW_REQUIRED
+                && "MIGRATED_TO_PAYMENT_GATED_ADMISSION".equals(lastErrorCode);
+    }
+
+    public void resumeMigratedAdmission(Map<String, Object> canonicalPayload, LocalDateTime now) {
+        if (!isAwaitingAdmissionPaymentMigration()) {
+            throw new IllegalStateException("납부 대기로 전환한 생성 요청이 아닙니다.");
+        }
+        this.payload = new java.util.LinkedHashMap<>(canonicalPayload);
+        resetForRetry(now);
+    }
+
     // 운영자가 원인을 해결한 뒤 수동으로 재실행할 때 사용한다.
     public void resetForRetry(LocalDateTime now) {
         this.status = AccountSyncOutboxStatus.PENDING;

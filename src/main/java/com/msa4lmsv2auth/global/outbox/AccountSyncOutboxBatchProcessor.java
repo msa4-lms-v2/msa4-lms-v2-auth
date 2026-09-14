@@ -37,6 +37,7 @@ public class AccountSyncOutboxBatchProcessor {
     private final AccountSyncOutboxRepository accountSyncOutboxRepository;
     private final AccountRepository accountRepository;
     private final AcademicClient academicClient;
+    private final com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
 
     // PENDING/PROCESSING으로 남아 staleAfter(기본 24시간)를 넘긴 행을 MANUAL_REVIEW_REQUIRED로 종결한다.
     // ERD의 account_sync_outbox.status에는 FAILED가 없어(PENDING/PROCESSING/COMPLETED/MANUAL_REVIEW_REQUIRED 4개뿐),
@@ -72,8 +73,17 @@ public class AccountSyncOutboxBatchProcessor {
         }
 
         try {
+            if ("AdmissionAccountActivated".equals(event.getEventType())) {
+                if(account.getStatus()!=com.msa4lmsv2auth.domain.account.constant.AccountStatus.ACTIVE) throw new IllegalStateException("계정이 활성화되지 않았습니다.");
+                admissionClient.activated(asLong(event.getPayload().get("admissionCandidateId")),account.getId());
+                event.complete(now); return;
+            }
             String loginId = provision(event);
             account.activateWithLoginId(loginId);
+            if(event.getPayload().get("admissionCandidateId")!=null) {
+                accountSyncOutboxRepository.save(AccountSyncOutbox.create("ACCOUNT",account.getId(),"AdmissionAccountActivated",
+                        Map.of("admissionCandidateId",asLong(event.getPayload().get("admissionCandidateId"))),1L));
+            }
             event.complete(now);
         } catch (AcademicProvisioningRejectedException exception) {
             // Academic이 4xx로 거부한 경우(중복 이메일 등)는 재시도해도 결과가 바뀌지 않는다.
@@ -103,13 +113,9 @@ public class AccountSyncOutboxBatchProcessor {
 
         return switch (event.getEventType()) {
             case AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED -> {
-                StudentProvisioningResponseDTO response = academicClient.createStudent(
-                        new StudentProvisioningRequestDTO(
-                                userId, name, birthDate, email, phoneNumber, address,
-                                departmentId, asShort(payload.get("admissionYear")), asLong(payload.get("admissionCandidateId")),
-                                asLong(payload.get("advisorProfessorId"))
-                        )
-                );
+                var request=new StudentProvisioningRequestDTO(userId,name,birthDate,email,phoneNumber,address,departmentId,
+                        asShort(payload.get("admissionYear")),asLong(payload.get("admissionCandidateId")),asLong(payload.get("advisorProfessorId")));
+                StudentProvisioningResponseDTO response=request.admissionCandidateId()==null ? academicClient.createStudent(request) : admissionClient.provision(request);
                 yield response.loginId();
             }
             case AccountSyncEventType.PROFESSOR_PROVISIONING_REQUESTED -> {
