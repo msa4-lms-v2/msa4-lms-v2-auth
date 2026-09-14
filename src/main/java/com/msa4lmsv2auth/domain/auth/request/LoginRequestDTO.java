@@ -14,7 +14,7 @@ public record LoginRequestDTO(
         String loginId,
 
         @NotBlank(message = "비밀번호는 필수입니다")
-        @Pattern(regexp = "^[0-9a-zA-Z!@#$%^&*()]{8,20}$"
+        @Pattern(regexp = "^[0-9a-zA-Z!@#$%^&*()]{6,20}$"
                 , message = "허용하지 않는 양식입니다."
         )
         String password

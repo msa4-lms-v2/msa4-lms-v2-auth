@@ -12,6 +12,7 @@ import com.msa4lmsv2auth.domain.outbox.constant.AccountSyncEventType;
 import com.msa4lmsv2auth.domain.outbox.entity.AccountSyncOutbox;
 import com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +95,7 @@ public class AccountSyncOutboxBatchProcessor {
         Map<String, Object> payload = event.getPayload();
         Long userId = asLong(payload.get("userId"));
         String name = (String) payload.get("name");
+        LocalDate birthDate = asLocalDate(payload.get("birthDate"));
         String email = (String) payload.get("email");
         String phoneNumber = (String) payload.get("phoneNumber");
         String address = (String) payload.get("address");
@@ -103,7 +105,7 @@ public class AccountSyncOutboxBatchProcessor {
             case AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED -> {
                 StudentProvisioningResponseDTO response = academicClient.createStudent(
                         new StudentProvisioningRequestDTO(
-                                userId, name, email, phoneNumber, address,
+                                userId, name, birthDate, email, phoneNumber, address,
                                 departmentId, asShort(payload.get("admissionYear")), asLong(payload.get("admissionCandidateId")),
                                 asLong(payload.get("advisorProfessorId"))
                         )
@@ -113,7 +115,7 @@ public class AccountSyncOutboxBatchProcessor {
             case AccountSyncEventType.PROFESSOR_PROVISIONING_REQUESTED -> {
                 ProfessorProvisioningResponseDTO response = academicClient.createProfessor(
                         new ProfessorProvisioningRequestDTO(
-                                userId, name, email, phoneNumber, address,
+                                userId, name, birthDate, email, phoneNumber, address,
                                 departmentId, asShort(payload.get("hireYear"))
                         )
                 );
@@ -136,5 +138,19 @@ public class AccountSyncOutboxBatchProcessor {
 
     private Short asShort(Object value) {
         return value == null ? null : ((Number) value).shortValue();
+    }
+
+    private LocalDate asLocalDate(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDate localDate) return localDate;
+        // 기존 outbox에는 Jackson timestamp 배열([yyyy, M, d])이 남아 있을 수 있다.
+        if (value instanceof List<?> parts && parts.size() == 3) {
+            return LocalDate.of(
+                    ((Number) parts.get(0)).intValue(),
+                    ((Number) parts.get(1)).intValue(),
+                    ((Number) parts.get(2)).intValue()
+            );
+        }
+        return LocalDate.parse(value.toString());
     }
 }

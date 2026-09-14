@@ -20,6 +20,7 @@ import com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository;
 import com.msa4lmsv2auth.domain.outbox.service.AccountSyncOutboxService;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import java.util.Map;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -41,7 +42,7 @@ class AccountServiceTest {
         when(accountSyncOutboxRepository.lockAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
         when(accountRepository.findById(23L)).thenReturn(java.util.Optional.of(account));
         var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
-                7L, "학생", "s@example.com", null, null, 1L, 2L, (short) 2026);
+                7L, "학생", LocalDate.of(2005, 2, 22), "s@example.com", null, null, 1L, 2L, (short) 2026);
         assertThat(accountService.retryAdmission(request).id()).isEqualTo(23L);
         assertThat(event.getStatus().name()).isEqualTo("PENDING");
         assertThat(event.getPayload()).containsKey("_retryStartedAt");
@@ -92,7 +93,7 @@ class AccountServiceTest {
     @Test
     void admissionRegistrationCreatesOnlyOneAccountAndCarriesCandidateId() {
         var request = new com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO(
-                7L, "김학생", "student@example.com", null, null, 5L, 10L, (short) 2026);
+                7L, "김학생", LocalDate.of(2005, 2, 22), "student@example.com", null, null, 5L, 10L, (short) 2026);
         when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> {
             Account account = invocation.getArgument(0);
@@ -107,6 +108,8 @@ class AccountServiceTest {
         verify(accountSyncOutboxService).record(eq("ACCOUNT"), eq(23L), eq(AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED), payload.capture(), eq(1L));
         assertThat(payload.getValue()).containsEntry("admissionCandidateId", 7L);
         assertThat(payload.getValue()).containsEntry("advisorProfessorId", 10L);
+        assertThat(payload.getValue()).containsEntry("birthDate", "2005-02-22");
+        verify(passwordEncoder).encode("050222");
         AccountSyncOutbox event = AccountSyncOutbox.create("ACCOUNT", 23L,
                 AccountSyncEventType.STUDENT_PROVISIONING_REQUESTED, Map.of("admissionCandidateId", 7L), 1L);
         when(accountSyncOutboxRepository.findAdmissionProvisioningEvent(7L)).thenReturn(java.util.Optional.of(event));
@@ -118,7 +121,7 @@ class AccountServiceTest {
     @Test
     void should_createPendingAccountAndRecordOutboxEvent_when_studentAccountIsCreated() {
         StudentAccountCreateRequestDTO request = new StudentAccountCreateRequestDTO(
-                "홍길동", "student@example.com", "010-1234-5678", "서울특별시", 5L, (short) 2026
+                "홍길동", LocalDate.of(2005, 2, 22), "student@example.com", "010-1234-5678", "서울특별시", 5L, (short) 2026
         );
         when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> {
@@ -143,6 +146,7 @@ class AccountServiceTest {
         assertThat(payloadCaptor.getValue())
                 .containsEntry("userId", 1L)
                 .containsEntry("name", "홍길동")
+                .containsEntry("birthDate", "2005-02-22")
                 .containsEntry("email", "student@example.com")
                 .containsEntry("departmentId", 5L)
                 .containsEntry("admissionYear", (short) 2026);
@@ -151,7 +155,7 @@ class AccountServiceTest {
     @Test
     void should_createPendingAccountAndRecordOutboxEvent_when_professorAccountIsCreated() {
         ProfessorAccountCreateRequestDTO request = new ProfessorAccountCreateRequestDTO(
-                "김교수", "professor@example.com", "010-9876-5432", "서울특별시", 5L, (short) 2026
+                "김교수", LocalDate.of(1980, 11, 3), "professor@example.com", "010-9876-5432", "서울특별시", 5L, (short) 2026
         );
         when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> {
@@ -164,6 +168,7 @@ class AccountServiceTest {
 
         assertThat(response.status()).isEqualTo(AccountStatus.PENDING_PROVISIONING);
         assertThat(response.role()).isEqualTo(Role.PROFESSOR);
+        verify(passwordEncoder).encode("801103");
 
         verify(accountSyncOutboxService).record(
                 eq("ACCOUNT"),
