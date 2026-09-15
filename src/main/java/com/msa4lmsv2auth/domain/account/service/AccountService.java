@@ -11,6 +11,8 @@ import com.msa4lmsv2auth.domain.outbox.service.AccountSyncOutboxService;
 import com.msa4lmsv2auth.global.security.constant.Role;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,13 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class AccountService {
-    private static final String TEMPORARY_PASSWORD = "password123!";
+    private static final DateTimeFormatter INITIAL_PASSWORD_FORMAT = DateTimeFormatter.ofPattern("yyMMdd");
 
     private static final String AGGREGATE_TYPE_ACCOUNT = "ACCOUNT";
     private static final long INITIAL_SOURCE_VERSION = 1L;
 
     private final PasswordEncoder passwordEncoder;
     private final AccountRepository accountRepository;
+    private final com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
     private final AccountSyncOutboxService accountSyncOutboxService;
     private final com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository accountSyncOutboxRepository;
 
@@ -38,8 +41,9 @@ public class AccountService {
     ) {
         Account account = new Account();
         account.setLoginId(null);
+        account.setBirthDate(request.birthDate());
         account.setPassword(
-                passwordEncoder.encode(TEMPORARY_PASSWORD)
+                passwordEncoder.encode(initialPassword(request.birthDate()))
         );
         account.setRole(Role.STUDENT);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
@@ -65,8 +69,9 @@ public class AccountService {
     ) {
         Account account = new Account();
         account.setLoginId(null);
+        account.setBirthDate(request.birthDate());
         account.setPassword(
-                passwordEncoder.encode(TEMPORARY_PASSWORD)
+                passwordEncoder.encode(initialPassword(request.birthDate()))
         );
         account.setRole(Role.PROFESSOR);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
@@ -88,16 +93,39 @@ public class AccountService {
     @Transactional
     public AccountResponseDTO createAdmission(
             com.msa4lmsv2auth.domain.account.request.AdmissionAccountCreateRequestDTO request) {
+        admissionClient.requirePaid(request.admissionCandidateId());
         Account existing = findAdmissionAccount(request.admissionCandidateId());
-        if (existing != null) return AccountResponseDTO.from(existing);
+        if (existing != null) {
+            if (existing.getStatus() == AccountStatus.PENDING_PROVISIONING) {
+                var event = accountSyncOutboxRepository.lockAdmissionProvisioningEvent(request.admissionCandidateId()).orElse(null);
+                if (event != null && event.isAwaitingAdmissionPaymentMigration()) {
+                    if (event.getAggregateId() != existing.getId()) {
+                        throw new IllegalStateException("입학 계정과 생성 요청이 일치하지 않습니다.");
+                    }
+                    Map<String, Object> payload = studentProvisioningPayload(existing.getId(), new StudentAccountCreateRequestDTO(
+                            request.name(), request.birthDate(), request.email(), request.phoneNumber(), request.address(),
+                            request.departmentId(), request.admissionYear()));
+                    payload.put("admissionCandidateId", request.admissionCandidateId());
+                    payload.put("advisorProfessorId", request.advisorProfessorId());
+                    event.resumeMigratedAdmission(payload, java.time.LocalDateTime.now());
+                    existing.setAdmissionCandidateId(request.admissionCandidateId());
+                    existing.setBirthDate(request.birthDate());
+                    existing.setPassword(passwordEncoder.encode(initialPassword(request.birthDate())));
+                }
+            }
+            return AccountResponseDTO.from(existing);
+        }
         Account account = new Account();
-        account.setPassword(passwordEncoder.encode(TEMPORARY_PASSWORD));
+        account.setBirthDate(request.birthDate());
+        account.setPassword(passwordEncoder.encode(initialPassword(request.birthDate())));
         account.setRole(Role.STUDENT);
         account.setStatus(AccountStatus.PENDING_PROVISIONING);
         account.setRequiresPasswordChange(true);
+        account.setAdmissionCandidateId(request.admissionCandidateId());
         Account saved = accountRepository.save(account);
         Map<String, Object> payload = studentProvisioningPayload(saved.getId(), new StudentAccountCreateRequestDTO(
-                request.name(), request.email(), request.phoneNumber(), request.address(), request.departmentId(), request.admissionYear()));
+                request.name(), request.birthDate(), request.email(), request.phoneNumber(), request.address(),
+                request.departmentId(), request.admissionYear()));
         payload.put("admissionCandidateId", request.admissionCandidateId());
         payload.put("advisorProfessorId", request.advisorProfessorId());
         accountSyncOutboxService.record(AGGREGATE_TYPE_ACCOUNT, saved.getId(),
@@ -117,7 +145,12 @@ public class AccountService {
         var event = accountSyncOutboxRepository.lockAdmissionProvisioningEvent(request.admissionCandidateId()).orElse(null);
         if (event == null) return createAdmission(request);
         var account = accountRepository.findById(event.getAggregateId()).orElseThrow();
-        if (account.getStatus() == AccountStatus.ACTIVE) return AccountResponseDTO.from(account);
+        admissionClient.requirePaid(request.admissionCandidateId());
+        if (account.getStatus() == AccountStatus.ACTIVE) {
+            accountSyncOutboxRepository.save(com.msa4lmsv2auth.domain.outbox.entity.AccountSyncOutbox.create(
+                    "ACCOUNT",account.getId(),"AdmissionAccountActivated",Map.of("admissionCandidateId",request.admissionCandidateId()),1L));
+            return AccountResponseDTO.from(account);
+        }
         if (account.getStatus() != AccountStatus.PENDING_PROVISIONING) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.CONFLICT, "취소되었거나 계정 생성 중이 아닌 계정입니다.");
@@ -147,6 +180,8 @@ public class AccountService {
     }
 
     private Account findAdmissionAccount(Long candidateId) {
+        var linked=accountRepository.findByAdmissionCandidateId(candidateId).orElse(null);
+        if(linked!=null) return linked;
         return accountSyncOutboxRepository.findAdmissionProvisioningEvent(candidateId)
                 .flatMap(event -> accountRepository.findById(event.getAggregateId()))
                 .orElse(null);
@@ -162,6 +197,7 @@ public class AccountService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", accountId);
         payload.put("name", request.name());
+        payload.put("birthDate", request.birthDate().toString());
         payload.put("email", request.email());
         payload.put("phoneNumber", request.phoneNumber());
         payload.put("address", request.address());
@@ -174,11 +210,19 @@ public class AccountService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", accountId);
         payload.put("name", request.name());
+        payload.put("birthDate", request.birthDate().toString());
         payload.put("email", request.email());
         payload.put("phoneNumber", request.phoneNumber());
         payload.put("address", request.address());
         payload.put("departmentId", request.departmentId());
         payload.put("hireYear", request.hireYear());
         return payload;
+    }
+
+    private String initialPassword(LocalDate birthDate) {
+        if (birthDate == null) {
+            throw new IllegalArgumentException("생년월일은 필수입니다.");
+        }
+        return birthDate.format(INITIAL_PASSWORD_FORMAT);
     }
 }

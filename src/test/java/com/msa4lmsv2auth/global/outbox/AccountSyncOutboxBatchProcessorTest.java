@@ -16,6 +16,7 @@ import com.msa4lmsv2auth.domain.outbox.entity.AccountSyncOutbox;
 import com.msa4lmsv2auth.domain.outbox.entity.AccountSyncOutboxStatus;
 import com.msa4lmsv2auth.domain.outbox.repository.AccountSyncOutboxRepository;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +41,8 @@ class AccountSyncOutboxBatchProcessorTest {
     @Mock
     private AcademicClient academicClient;
 
+    @Mock private com.msa4lmsv2auth.domain.account.client.AdmissionClient admissionClient;
+
     @InjectMocks
     private AccountSyncOutboxBatchProcessor batchProcessor;
 
@@ -47,17 +50,19 @@ class AccountSyncOutboxBatchProcessorTest {
     void should_activateAccountAndCompleteEvent_when_academicProvisioningSucceeds() {
         AccountSyncOutbox event = studentEvent(1L);
         event.getPayload().put("admissionCandidateId", 7L);
+        event.getPayload().put("birthDate", List.of(2005, 2, 22));
         Account account = pendingAccount(1L);
 
         when(accountSyncOutboxRepository.lockNextBatch(any(), anyInt())).thenReturn(List.of(event));
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
-        when(academicClient.createStudent(any())).thenReturn(new StudentProvisioningResponseDTO(1L, "26001001"));
+        when(admissionClient.provision(any())).thenReturn(new StudentProvisioningResponseDTO(1L, "26001001"));
 
         batchProcessor.publishPendingBatch();
 
         org.mockito.ArgumentCaptor<com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO> captor = org.mockito.ArgumentCaptor.forClass(com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO.class);
-        org.mockito.Mockito.verify(academicClient).createStudent(captor.capture());
+        org.mockito.Mockito.verify(admissionClient).provision(captor.capture());
         assertThat(captor.getValue().admissionCandidateId()).isEqualTo(7L);
+        assertThat(captor.getValue().birthDate()).isEqualTo(LocalDate.of(2005, 2, 22));
         assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(account.getLoginId()).isEqualTo("26001001");
         assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.COMPLETED);
@@ -77,6 +82,26 @@ class AccountSyncOutboxBatchProcessorTest {
         assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.PENDING);
         assertThat(event.getAttempts()).isEqualTo(1);
         assertThat(account.getStatus()).isEqualTo(AccountStatus.PENDING_PROVISIONING);
+    }
+
+    @Test
+    void activationNotificationRetriesWithoutCreatingOrDisablingStudent() {
+        AccountSyncOutbox event = AccountSyncOutbox.create("ACCOUNT", 1L,
+                "AdmissionAccountActivated", Map.of("admissionCandidateId", 7L), 1L);
+        Account account = pendingAccount(1L);
+        account.activateWithLoginId("26001001");
+        when(accountSyncOutboxRepository.lockNextBatch(any(), anyInt())).thenReturn(List.of(event));
+        when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+        org.mockito.Mockito.doThrow(new ResourceAccessException("timeout"))
+                .doNothing().when(admissionClient).activated(7L, 1L);
+
+        batchProcessor.publishPendingBatch();
+        assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.PENDING);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        batchProcessor.publishPendingBatch();
+        assertThat(event.getStatus()).isEqualTo(AccountSyncOutboxStatus.COMPLETED);
+        org.mockito.Mockito.verify(admissionClient, org.mockito.Mockito.never()).provision(any());
+        org.mockito.Mockito.verifyNoInteractions(academicClient);
     }
 
     @Test
@@ -111,6 +136,7 @@ class AccountSyncOutboxBatchProcessorTest {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", accountId);
         payload.put("name", "홍길동");
+        payload.put("birthDate", "2005-02-22");
         payload.put("email", "student@example.com");
         payload.put("phoneNumber", "010-1234-5678");
         payload.put("address", "서울특별시");

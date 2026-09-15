@@ -5,6 +5,8 @@ import com.msa4lmsv2auth.domain.account.request.StudentProvisioningRequestDTO;
 import com.msa4lmsv2auth.domain.account.response.ProfessorProvisioningResponseDTO;
 import com.msa4lmsv2auth.domain.account.response.StudentProvisioningResponseDTO;
 import com.msa4lmsv2auth.global.response.GlobalResponseDTO;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
@@ -42,7 +44,7 @@ public class AcademicClient {
                         .retrieve()
                         .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                             throw new AcademicProvisioningRejectedException(
-                                    "Academic 학생 프로비저닝 요청이 거부됐습니다(상태 " + res.getStatusCode().value() + ").");
+                                    rejectionMessage("학생", res));
                         })
                         .body(new ParameterizedTypeReference<>() {});
 
@@ -65,7 +67,7 @@ public class AcademicClient {
                         .retrieve()
                         .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
                             throw new AcademicProvisioningRejectedException(
-                                    "Academic 교수 프로비저닝 요청이 거부됐습니다(상태 " + res.getStatusCode().value() + ").");
+                                    rejectionMessage("교수", res));
                         })
                         .body(new ParameterizedTypeReference<>() {});
 
@@ -76,5 +78,12 @@ public class AcademicClient {
         }
 
         return response.data();
+    }
+
+    private String rejectionMessage(String target, org.springframework.http.client.ClientHttpResponse response)
+            throws IOException {
+        String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+        return "Academic " + target + " 프로비저닝 요청이 거부됐습니다(상태 "
+                + response.getStatusCode().value() + ", 응답: " + body + ").";
     }
 }

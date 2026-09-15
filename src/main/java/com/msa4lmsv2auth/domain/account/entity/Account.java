@@ -13,6 +13,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.sql.Types;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -32,8 +33,14 @@ public class Account {
     @Column(name = "login_id", unique = true, length = 150)
     private String loginId;
 
+    @Column(name = "admission_candidate_id", unique = true)
+    private Long admissionCandidateId;
+
     @Column(name = "password", nullable = false, length = 255)
     private String password;
+
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(Types.VARCHAR)
